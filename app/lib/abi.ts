@@ -1,0 +1,54 @@
+export const stakeAndAdvanceAbi = [
+  {
+    type: "function",
+    name: "deposit",
+    stateMutability: "nonpayable",
+    inputs: [
+      { name: "user", type: "address" },
+      { name: "amount", type: "uint256" },
+    ],
+    outputs: [{ name: "stakeId", type: "uint256" }],
+  },
+  {
+    type: "function",
+    name: "drawdown",
+    stateMutability: "nonpayable",
+    inputs: [{ name: "amount", type: "uint256" }],
+    outputs: [],
+  },
+  {
+    type: "function",
+    name: "repay",
+    stateMutability: "nonpayable",
+    inputs: [{ name: "amount", type: "uint256" }],
+    outputs: [],
+  },
+  {
+    type: "function",
+    name: "cancel",
+    stateMutability: "nonpayable",
+    inputs: [{ name: "stakeId", type: "uint256" }],
+    outputs: [],
+  },
+  {
+    type: "function",
+    name: "raiseDispute",
+    stateMutability: "nonpayable",
+    inputs: [{ name: "stakeId", type: "uint256" }],
+    outputs: [],
+  },
+  {
+    type: "function",
+    name: "autoRelease",
+    stateMutability: "nonpayable",
+    inputs: [{ name: "stakeId", type: "uint256" }],
+    outputs: [],
+  },
+  {
+    type: "function",
+    name: "effectiveCreditLimit",
+    stateMutability: "view",
+    inputs: [{ name: "vendor", type: "address" }],
+    outputs: [{ name: "", type: "uint256" }],
+  },
+] as const;

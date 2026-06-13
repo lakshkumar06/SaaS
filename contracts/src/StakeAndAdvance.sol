@@ -50,6 +50,7 @@ contract StakeAndAdvance is IReceiver, ReentrancyGuard {
     uint256 public collateralInYield;
 
     mapping(uint256 stakeId => Stake stake) public stakes;
+    mapping(address vendor => uint256 principal) public vendorPrincipalTotal;
     mapping(address vendor => uint256 allocation) public vendorCreditAllocationTotal;
     mapping(address vendor => uint256 debt) public currentOutstandingDebt;
     mapping(address vendor => uint256 obligation) public priorityObligation;
@@ -62,6 +63,7 @@ contract StakeAndAdvance is IReceiver, ReentrancyGuard {
 
     mapping(address vendor => uint256 cap) internal _vendorCreditCap;
     mapping(address vendor => uint64 expiry) internal _vendorCapExpiry;
+    mapping(address vendor => uint16 allocationBps) internal _vendorCreditAllocationBps;
 
     event Deposited(
         uint256 indexed stakeId,
@@ -94,11 +96,14 @@ contract StakeAndAdvance is IReceiver, ReentrancyGuard {
         uint256 pendingObligation
     );
     event AutoReleased(uint256 indexed stakeId, uint256 immediateRefund, uint256 pendingObligation);
-    event CreditCapUpdated(address indexed vendor, uint256 cap, uint64 expiry);
+    event CreditTermsUpdated(
+        address indexed vendor, uint256 cap, uint64 expiry, uint16 creditAllocationBps
+    );
 
     error InvalidAddress();
     error InvalidAmount();
     error InvalidCollateralBps();
+    error InvalidCreditAllocationBps();
     error OnlyVendor();
     error OnlyTreasury();
     error OnlyStakeUser();
@@ -146,8 +151,8 @@ contract StakeAndAdvance is IReceiver, ReentrancyGuard {
         if (user == address(0)) revert InvalidAddress();
         if (amount == 0) revert InvalidAmount();
 
-        uint256 collateral = amount * collateralBps / BPS;
-        uint256 creditAllocation = amount - collateral;
+        uint256 creditAllocation = amount * _activeCreditAllocationBps(vendor) / BPS;
+        uint256 collateral = amount - creditAllocation;
 
         stakeId = nextStakeId++;
         stakes[stakeId] = Stake({
@@ -163,6 +168,7 @@ contract StakeAndAdvance is IReceiver, ReentrancyGuard {
         });
 
         vendorCreditAllocationTotal[vendor] += creditAllocation;
+        vendorPrincipalTotal[vendor] += amount;
         collateralReservedTotal += collateral;
         usdc.safeTransferFrom(msg.sender, address(this), amount);
 
@@ -187,6 +193,14 @@ contract StakeAndAdvance is IReceiver, ReentrancyGuard {
 
     function vendorCapExpiry(address vendor_) external view returns (uint64) {
         return _vendorCapExpiry[vendor_];
+    }
+
+    function defaultCreditAllocationBps() public view returns (uint16) {
+        return BPS - collateralBps;
+    }
+
+    function vendorCreditAllocationBps(address vendor_) external view returns (uint16) {
+        return _activeCreditAllocationBps(vendor_);
     }
 
     function platformTrackRecord(address vendor_)
@@ -342,22 +356,41 @@ contract StakeAndAdvance is IReceiver, ReentrancyGuard {
     function onReport(bytes calldata, bytes calldata report) external virtual override {
         if (msg.sender != keystoneForwarder) revert UnauthorizedReportSender();
 
-        (address reportVendor, uint256 cap, uint64 expiry) =
-            abi.decode(report, (address, uint256, uint64));
-        _setCreditCap(reportVendor, cap, expiry);
+        (address reportVendor, uint256 cap, uint64 expiry, uint16 creditAllocationBps) =
+            abi.decode(report, (address, uint256, uint64, uint16));
+        _setCreditTerms(reportVendor, cap, expiry, creditAllocationBps);
     }
 
     function _setCreditCap(address vendor_, uint256 cap, uint64 expiry) internal {
+        _setCreditTerms(vendor_, cap, expiry, defaultCreditAllocationBps());
+    }
+
+    function _setCreditTerms(
+        address vendor_,
+        uint256 cap,
+        uint64 expiry,
+        uint16 creditAllocationBps
+    ) internal {
         if (vendor_ == address(0)) revert InvalidAddress();
+        if (creditAllocationBps > BPS) revert InvalidCreditAllocationBps();
         _vendorCreditCap[vendor_] = cap;
         _vendorCapExpiry[vendor_] = expiry;
-        emit CreditCapUpdated(vendor_, cap, expiry);
+        _vendorCreditAllocationBps[vendor_] = creditAllocationBps;
+        emit CreditTermsUpdated(vendor_, cap, expiry, creditAllocationBps);
     }
 
     function _activeCreditCap(address vendor_) internal view returns (uint256) {
         uint64 expiry = _vendorCapExpiry[vendor_];
         if (expiry != 0 && block.timestamp > expiry) return 0;
         return _vendorCreditCap[vendor_];
+    }
+
+    function _activeCreditAllocationBps(address vendor_) internal view returns (uint16) {
+        uint64 expiry = _vendorCapExpiry[vendor_];
+        if (expiry != 0 && block.timestamp > expiry) return defaultCreditAllocationBps();
+
+        uint16 allocationBps = _vendorCreditAllocationBps[vendor_];
+        return allocationBps == 0 ? defaultCreditAllocationBps() : allocationBps;
     }
 
     function _attributedDebt(address vendor_, uint256 allocation, uint256 totalAllocation)
@@ -395,6 +428,7 @@ contract StakeAndAdvance is IReceiver, ReentrancyGuard {
     }
 
     function _removeAllocation(Stake storage stake) internal {
+        vendorPrincipalTotal[stake.vendor] -= stake.amount;
         vendorCreditAllocationTotal[stake.vendor] -= stake.creditAllocation;
         collateralReservedTotal -= stake.collateral;
     }

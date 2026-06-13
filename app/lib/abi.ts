@@ -74,6 +74,27 @@ export const stakeAndAdvanceAbi = [
   },
   {
     type: "function",
+    name: "vendorPrincipalTotal",
+    stateMutability: "view",
+    inputs: [{ name: "vendor", type: "address" }],
+    outputs: [{ name: "", type: "uint256" }],
+  },
+  {
+    type: "function",
+    name: "vendorCreditAllocationTotal",
+    stateMutability: "view",
+    inputs: [{ name: "vendor", type: "address" }],
+    outputs: [{ name: "", type: "uint256" }],
+  },
+  {
+    type: "function",
+    name: "vendorCreditAllocationBps",
+    stateMutability: "view",
+    inputs: [{ name: "vendor", type: "address" }],
+    outputs: [{ name: "", type: "uint16" }],
+  },
+  {
+    type: "function",
     name: "platformTrackRecord",
     stateMutability: "view",
     inputs: [{ name: "vendor", type: "address" }],

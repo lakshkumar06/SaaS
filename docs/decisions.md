@@ -34,17 +34,22 @@ is unavailable, route collateral to Base Aave V3 as the TDD fallback.
 - Contract receiver entry point: `onReport(bytes metadata, bytes report)`
 - Trust boundary: `msg.sender` must be the KeystoneForwarder address for the
   selected network.
-- Report payload for this MVP: `abi.encode(address vendor, uint256 cap, uint64 expiry)`
+- Report payload for this MVP:
+  `abi.encode(address vendor, uint256 cap, uint64 expiry, uint16 creditAllocationBps)`
 - Confidential inference path: CRE Confidential HTTP request with sandbox
   endpoint/API key supplied outside the repository.
 - Credit-limit policy:
   - vendor history comes from this platform's onchain repayment track record
   - the contract exposes drawdowns, repayment count, on-time repayments, late
     repayments, total repaid, current outstanding debt, and current debt due date
-  - if platform history exists, CRE derives a cap from confidential underwriting
-    plus the platform repayment record
-  - if no platform history exists, CRE reports a cap equal to `40%` of the
-    vendor's current credit allocation
+  - Chainlink CRE determines `creditAllocationBps`, the percentage of user
+    principal that becomes vendor borrowable supply on new deposits
+  - if no platform history exists, `creditAllocationBps` defaults to `40%`
+  - if platform history exists, CRE raises or lowers `creditAllocationBps` from
+    on-time repayment rate, repayment depth, repaid volume, late payments,
+    current outstanding debt, confidential AI risk score, delinquency, and burn
+  - CRE also reports `cap`, a risk ceiling; the contract enforces the final
+    borrow limit as `min(vendorCreditAllocationTotal, vendorCreditCap)`
 
 The Arc testnet KeystoneForwarder address still needs final confirmation from
 the current Chainlink forwarder directory or hackathon resources before deploy.

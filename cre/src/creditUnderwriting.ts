@@ -2,7 +2,7 @@ import { encodeAbiParameters, parseAbiParameters } from "viem";
 
 export type FinancialInputs = {
   vendor: `0x${string}`;
-  currentCreditAllocationUsdc: number;
+  currentDepositedPrincipalUsdc: number;
   monthlyRecurringRevenueUsd: number;
   grossMarginBps: number;
   cashBalanceUsd: number;
@@ -32,6 +32,7 @@ export type UnderwritingReport = {
   vendor: `0x${string}`;
   cap: bigint;
   expiry: bigint;
+  creditAllocationBps: number;
   inference: ConfidentialInferenceResult;
   encodedPayload: `0x${string}`;
 };
@@ -39,6 +40,8 @@ export type UnderwritingReport = {
 const USDC = 1_000_000n;
 const MAX_MULTIPLE = 3;
 const DEFAULT_NO_HISTORY_BPS = 4_000;
+const MIN_CREDIT_ALLOCATION_BPS = 1_000;
+const MAX_CREDIT_ALLOCATION_BPS = 8_000;
 const REPORT_TTL_SECONDS = 7n * 24n * 60n * 60n;
 
 export function deriveConservativeCap(input: FinancialInputs, inference: ConfidentialInferenceResult) {
@@ -63,45 +66,82 @@ export function hasPlatformHistory(input: FinancialInputs) {
 }
 
 export function deriveNoHistoryCap(input: FinancialInputs) {
-  const allocationUnits = BigInt(Math.floor(Math.max(0, input.currentCreditAllocationUsdc) * 1_000_000));
-  return allocationUnits * BigInt(DEFAULT_NO_HISTORY_BPS) / 10_000n;
+  return deriveSupplyFromPrincipal(input, DEFAULT_NO_HISTORY_BPS);
 }
 
 export function deriveCap(input: FinancialInputs, inference: ConfidentialInferenceResult) {
+  const allocationBps = deriveCreditAllocationBps(input, inference);
+  const chainlinkSupply = deriveSupplyFromPrincipal(input, allocationBps);
+
   if (!hasPlatformHistory(input)) {
-    return deriveNoHistoryCap(input);
+    return chainlinkSupply;
   }
 
   const inferredCap = deriveConservativeCap(input, inference);
-  const allocationCap = BigInt(Math.floor(Math.max(0, input.currentCreditAllocationUsdc) * 1_000_000));
-  const platformCap = derivePlatformTrackRecordCap(input);
-  const smallerCap = inferredCap < platformCap ? inferredCap : platformCap;
-  return smallerCap > allocationCap ? allocationCap : smallerCap;
+  return inferredCap < chainlinkSupply ? inferredCap : chainlinkSupply;
 }
 
 export function derivePlatformTrackRecordCap(input: FinancialInputs) {
   const history = input.platformTrackRecord;
   if (!history || history.repaymentCount === 0) return deriveNoHistoryCap(input);
 
-  const allocationUnits = BigInt(Math.floor(Math.max(0, input.currentCreditAllocationUsdc) * 1_000_000));
   const onTimeBps = Math.max(0, Math.min(10_000, history.onTimeRepaymentBps));
   const latePenaltyBps = Math.min(3_000, history.lateRepaymentCount * 1_000);
   const outstandingPenaltyBps = history.currentOutstandingDebtUsdc > 0 ? 1_000 : 0;
   const trackRecordBps = Math.max(1_000, Math.min(10_000, 4_000 + onTimeBps / 2 - latePenaltyBps - outstandingPenaltyBps));
 
-  return allocationUnits * BigInt(Math.floor(trackRecordBps)) / 10_000n;
+  return deriveSupplyFromPrincipal(input, Math.floor(trackRecordBps));
+}
+
+export function deriveCreditAllocationBps(
+  input: FinancialInputs,
+  inference: ConfidentialInferenceResult,
+) {
+  if (!hasPlatformHistory(input)) return DEFAULT_NO_HISTORY_BPS;
+
+  const history = input.platformTrackRecord!;
+  const onTimeBps = Math.max(0, Math.min(10_000, history.onTimeRepaymentBps));
+  const repaymentDepthBps = Math.min(1_000, history.repaymentCount * 200);
+  const volumeDepthBps = Math.min(1_000, Math.floor(history.totalRepaidUsdc / 1_000) * 100);
+  const onTimeBonusBps = Math.floor((onTimeBps - 8_000) / 4);
+  const latePenaltyBps = Math.min(2_500, history.lateRepaymentCount * 800);
+  const outstandingPenaltyBps = history.currentOutstandingDebtUsdc > 0 ? 750 : 0;
+  const riskPenaltyBps = Math.max(0, inference.riskScore - 50) * 50;
+  const delinquencyPenaltyBps = input.delinquencyRateBps > 500 ? input.delinquencyRateBps / 2 : 0;
+  const burnPenaltyBps = input.monthlyBurnUsd > input.cashBalanceUsd ? 750 : 0;
+
+  const rawBps =
+    DEFAULT_NO_HISTORY_BPS
+    + onTimeBonusBps
+    + repaymentDepthBps
+    + volumeDepthBps
+    - latePenaltyBps
+    - outstandingPenaltyBps
+    - riskPenaltyBps
+    - delinquencyPenaltyBps
+    - burnPenaltyBps;
+
+  return Math.floor(
+    Math.max(MIN_CREDIT_ALLOCATION_BPS, Math.min(MAX_CREDIT_ALLOCATION_BPS, rawBps)),
+  );
+}
+
+export function deriveSupplyFromPrincipal(input: FinancialInputs, creditAllocationBps: number) {
+  const principalUnits =
+    BigInt(Math.floor(Math.max(0, input.currentDepositedPrincipalUsdc) * 1_000_000));
+  return principalUnits * BigInt(Math.floor(creditAllocationBps)) / 10_000n;
 }
 
 export function encodeCreditCapReport(
   vendor: `0x${string}`,
   cap: bigint,
   expiry: bigint,
+  creditAllocationBps: number,
 ): `0x${string}` {
-  return encodeAbiParameters(parseAbiParameters("address vendor, uint256 cap, uint64 expiry"), [
-    vendor,
-    cap,
-    expiry,
-  ]);
+  return encodeAbiParameters(
+    parseAbiParameters("address vendor, uint256 cap, uint64 expiry, uint16 creditAllocationBps"),
+    [vendor, cap, expiry, creditAllocationBps],
+  );
 }
 
 export async function underwriteVendor(
@@ -110,6 +150,7 @@ export async function underwriteVendor(
   nowSeconds: bigint,
 ): Promise<UnderwritingReport> {
   const inference = await confidentialInfer(input);
+  const creditAllocationBps = deriveCreditAllocationBps(input, inference);
   const cap = deriveCap(input, inference);
   const expiry = nowSeconds + REPORT_TTL_SECONDS;
 
@@ -117,8 +158,9 @@ export async function underwriteVendor(
     vendor: input.vendor,
     cap,
     expiry,
+    creditAllocationBps,
     inference,
-    encodedPayload: encodeCreditCapReport(input.vendor, cap, expiry),
+    encodedPayload: encodeCreditCapReport(input.vendor, cap, expiry, creditAllocationBps),
   };
 }
 
@@ -155,7 +197,9 @@ export async function workflow(runtime: {
           financials,
           policy: {
             noPlatformHistoryCapBps: DEFAULT_NO_HISTORY_BPS,
-            currentAllocationUsdc: financials.currentCreditAllocationUsdc,
+            minCreditAllocationBps: MIN_CREDIT_ALLOCATION_BPS,
+            maxCreditAllocationBps: MAX_CREDIT_ALLOCATION_BPS,
+            currentDepositedPrincipalUsdc: financials.currentDepositedPrincipalUsdc,
             platformTrackRecord: financials.platformTrackRecord ?? null,
           },
         },

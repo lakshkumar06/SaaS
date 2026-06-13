@@ -32,8 +32,8 @@ contract AttestationTest is TestBase {
         token.approve(address(creditLine), type(uint256).max);
     }
 
-    function test_onReport_setsCap_onlyForwarder() external {
-        bytes memory report = abi.encode(vendor, 100 * USDC, uint64(block.timestamp + 1 days));
+    function test_onReport_setsTerms_onlyForwarder() external {
+        bytes memory report = abi.encode(vendor, 100 * USDC, uint64(block.timestamp + 1 days), 6500);
 
         vm.expectRevert(StakeAndAdvance.UnauthorizedReportSender.selector);
         vm.prank(attacker);
@@ -44,6 +44,7 @@ contract AttestationTest is TestBase {
 
         assertEq(creditLine.vendorCreditCap(vendor), 100 * USDC, "cap");
         assertEq(creditLine.vendorCapExpiry(vendor), block.timestamp + 1 days, "expiry");
+        assertEq(creditLine.vendorCreditAllocationBps(vendor), 6500, "allocation bps");
     }
 
     function test_drawdown_unlockedAfterAttestation() external {
@@ -54,7 +55,7 @@ contract AttestationTest is TestBase {
         vm.prank(vendor);
         creditLine.drawdown(100 * USDC);
 
-        bytes memory report = abi.encode(vendor, 100 * USDC, uint64(block.timestamp + 1 days));
+        bytes memory report = abi.encode(vendor, 100 * USDC, uint64(block.timestamp + 1 days), 4000);
         vm.prank(forwarder);
         creditLine.onReport("", report);
 
@@ -62,5 +63,30 @@ contract AttestationTest is TestBase {
         creditLine.drawdown(100 * USDC);
 
         assertEq(creditLine.currentOutstandingDebt(vendor), 100 * USDC, "debt");
+    }
+
+    function test_onReport_changesFutureDepositSupply() external {
+        bytes memory report = abi.encode(vendor, 175 * USDC, uint64(block.timestamp + 1 days), 7000);
+
+        vm.prank(forwarder);
+        creditLine.onReport("", report);
+
+        vm.prank(user);
+        uint256 stakeId = creditLine.deposit(user, 250 * USDC);
+
+        (,,, uint256 collateral, uint256 creditAllocation,,,,) = creditLine.stakes(stakeId);
+
+        assertEq(collateral, 75 * USDC, "collateral");
+        assertEq(creditAllocation, 175 * USDC, "allocation");
+        assertEq(creditLine.vendorCreditAllocationTotal(vendor), 175 * USDC, "total allocation");
+    }
+
+    function test_onReport_revertsInvalidCreditAllocationBps() external {
+        bytes memory report =
+            abi.encode(vendor, 100 * USDC, uint64(block.timestamp + 1 days), 10_001);
+
+        vm.expectRevert(StakeAndAdvance.InvalidCreditAllocationBps.selector);
+        vm.prank(forwarder);
+        creditLine.onReport("", report);
     }
 }

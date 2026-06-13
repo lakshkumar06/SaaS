@@ -17,6 +17,12 @@ contract StakeAndAdvanceHarness is StakeAndAdvance {
     function setCreditCap(address vendor_, uint256 cap, uint64 expiry) external {
         _setCreditCap(vendor_, cap, expiry);
     }
+
+    function setCreditTerms(address vendor_, uint256 cap, uint64 expiry, uint16 creditAllocationBps)
+        external
+    {
+        _setCreditTerms(vendor_, cap, expiry, creditAllocationBps);
+    }
 }
 
 contract StakeAndAdvanceTest is TestBase {
@@ -64,6 +70,7 @@ contract StakeAndAdvanceTest is TestBase {
         assertEq(creditLine.arbiter(), arbiter, "arbiter");
         assertEq(creditLine.disputeWindow(), 10 minutes, "window");
         assertEq(creditLine.collateralBps(), 6000, "collateral bps");
+        assertEq(creditLine.vendorCreditAllocationBps(vendor), 4000, "default allocation bps");
     }
 
     function test_deposit_splitsTranches() external {
@@ -104,6 +111,20 @@ contract StakeAndAdvanceTest is TestBase {
         assertEq(stakeUser, user, "stake user");
         assertEq(token.balanceOf(payer), 750 * USDC, "payer balance");
         assertEq(token.balanceOf(user), 1_000 * USDC, "user balance");
+    }
+
+    function test_deposit_usesAttestedCreditAllocationBps() external {
+        creditLine.setCreditTerms(vendor, 175 * USDC, 0, 7000);
+
+        vm.prank(user);
+        uint256 stakeId = creditLine.deposit(user, 250 * USDC);
+
+        (,,, uint256 collateral, uint256 creditAllocation,,,,) = creditLine.stakes(stakeId);
+
+        assertEq(creditLine.vendorCreditAllocationBps(vendor), 7000, "allocation bps");
+        assertEq(collateral, 75 * USDC, "collateral");
+        assertEq(creditAllocation, 175 * USDC, "allocation");
+        assertEq(creditLine.vendorCreditAllocationTotal(vendor), 175 * USDC, "total allocation");
     }
 
     function test_creditLimit_zeroUntilAttested() external {

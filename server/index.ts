@@ -1,11 +1,20 @@
-import http from "node:http";
 import { pathToFileURL } from "node:url";
 
 import { configFromEnv, type ServerConfig } from "./config";
 import { signPersonhoodVoucher } from "./voucher";
 import { verifyWorldId, type WorldIdVerifyRequest } from "./worldid";
 
-function send(res: http.ServerResponse, code: number, body: unknown): void {
+type RequestLike = AsyncIterable<Uint8Array> & {
+  method?: string;
+  url?: string;
+};
+
+type ResponseLike = {
+  writeHead: (statusCode: number, headers: Record<string, string>) => void;
+  end: (body?: string) => void;
+};
+
+function send(res: ResponseLike, code: number, body: unknown): void {
   const payload = JSON.stringify(body, (_key, value) =>
     typeof value === "bigint" ? value.toString() : value,
   );
@@ -13,7 +22,7 @@ function send(res: http.ServerResponse, code: number, body: unknown): void {
   res.end(payload);
 }
 
-async function readJson(req: http.IncomingMessage): Promise<Record<string, unknown>> {
+async function readJson(req: RequestLike): Promise<Record<string, unknown>> {
   const chunks: Buffer[] = [];
   for await (const chunk of req) chunks.push(chunk as Buffer);
   const raw = Buffer.concat(chunks).toString("utf8").trim();
@@ -21,7 +30,7 @@ async function readJson(req: http.IncomingMessage): Promise<Record<string, unkno
 }
 
 export function buildHandler(config: ServerConfig) {
-  return async (req: http.IncomingMessage, res: http.ServerResponse): Promise<void> => {
+  return async (req: RequestLike, res: ResponseLike): Promise<void> => {
     try {
       const url = req.url ?? "/";
 
@@ -80,7 +89,8 @@ export function buildHandler(config: ServerConfig) {
 export async function startServer(
   config: ServerConfig,
 ): Promise<{ url: string; port: number; close: () => Promise<void> }> {
-  const server = http.createServer(buildHandler(config));
+  const nodeHttp: any = await import("node:http");
+  const server = nodeHttp.createServer(buildHandler(config));
   await new Promise<void>((resolve) => server.listen(config.port, resolve));
   const address = server.address();
   const port = typeof address === "object" && address ? address.port : config.port;

@@ -5,6 +5,10 @@
   "scripts": {
     "contracts:build": "forge build --root contracts",
     "contracts:test": "forge test --root contracts",
+    "cre:build": "cre workflow build ./cre",
+    "cre:simulate": "cre workflow simulate ./cre --trigger-index 0 --http-payload @./cre/http-payload.json -T staging-settings -e ./.env",
+    "cre:simulate:broadcast": "cre workflow simulate ./cre --broadcast --trigger-index 0 --http-payload @./cre/http-payload.json -T staging-settings -e ./.env",
+    "cre:inference": "tsx server/inference.ts",
     "server:dev": "tsx server/index.ts",
     "keeper:auto-release": "tsx keeper/autoRelease.ts"
   },

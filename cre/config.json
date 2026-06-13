@@ -1,0 +1,8 @@
+{
+  "inferenceUrl": "http://127.0.0.1:8790/infer",
+  "evm": {
+    "chainSelectorName": "arc-testnet",
+    "receiver": "0x34De13D637961c1D6FFa9BcEB4b11C1E77df1E06",
+    "gasLimit": "800000"
+  }
+}

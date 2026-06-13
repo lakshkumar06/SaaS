@@ -1,0 +1,19 @@
+{
+  "vendor": "0x19E95b026731974B7c1feD9eb3c3113fBDD80464",
+  "currentDepositedPrincipalUsdc": 2500000,
+  "monthlyRecurringRevenueUsd": 180000,
+  "grossMarginBps": 6200,
+  "cashBalanceUsd": 70000,
+  "monthlyBurnUsd": 30000,
+  "delinquencyRateBps": 120,
+  "platformTrackRecord": {
+    "drawdownCount": 4,
+    "repaymentCount": 4,
+    "onTimeRepaymentCount": 3,
+    "lateRepaymentCount": 1,
+    "onTimeRepaymentBps": 7500,
+    "totalRepaidUsdc": 1000000,
+    "currentOutstandingDebtUsdc": 0,
+    "currentDebtDueAt": 0
+  }
+}

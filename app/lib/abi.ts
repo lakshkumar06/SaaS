@@ -46,6 +46,27 @@ export const stakeAndAdvanceAbi = [
   },
   {
     type: "function",
+    name: "setTreasury",
+    stateMutability: "nonpayable",
+    inputs: [{ name: "newTreasury", type: "address" }],
+    outputs: [],
+  },
+  {
+    type: "function",
+    name: "pullCollateralForYield",
+    stateMutability: "nonpayable",
+    inputs: [{ name: "amount", type: "uint256" }],
+    outputs: [],
+  },
+  {
+    type: "function",
+    name: "returnCollateralFromYield",
+    stateMutability: "nonpayable",
+    inputs: [{ name: "amount", type: "uint256" }],
+    outputs: [],
+  },
+  {
+    type: "function",
     name: "effectiveCreditLimit",
     stateMutability: "view",
     inputs: [{ name: "vendor", type: "address" }],

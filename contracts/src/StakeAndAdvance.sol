@@ -41,9 +41,12 @@ contract StakeAndAdvance is IReceiver, ReentrancyGuard {
     address public immutable vendor;
     address public arbiter;
     address public keystoneForwarder;
+    address public treasury;
     uint64 public disputeWindow;
     uint16 public collateralBps;
     uint256 public nextStakeId = 1;
+    uint256 public collateralReservedTotal;
+    uint256 public collateralInYield;
 
     mapping(uint256 stakeId => Stake stake) public stakes;
     mapping(address vendor => uint256 allocation) public vendorCreditAllocationTotal;
@@ -64,6 +67,9 @@ contract StakeAndAdvance is IReceiver, ReentrancyGuard {
     );
     event DrawnDown(address indexed vendor, uint256 amount, uint256 outstandingDebt);
     event Repaid(address indexed vendor, uint256 amount, uint256 outstandingDebt);
+    event TreasuryUpdated(address indexed previousTreasury, address indexed newTreasury);
+    event CollateralPulledForYield(address indexed treasury, uint256 amount);
+    event CollateralReturnedFromYield(address indexed treasury, uint256 amount);
     event Settled(
         uint256 indexed stakeId,
         address indexed user,
@@ -86,6 +92,7 @@ contract StakeAndAdvance is IReceiver, ReentrancyGuard {
     error InvalidAmount();
     error InvalidCollateralBps();
     error OnlyVendor();
+    error OnlyTreasury();
     error OnlyStakeUser();
     error OnlyStakeParty();
     error OnlyArbiter();
@@ -112,12 +119,18 @@ contract StakeAndAdvance is IReceiver, ReentrancyGuard {
         vendor = msg.sender;
         arbiter = arbiter_;
         keystoneForwarder = keystoneForwarder_;
+        treasury = msg.sender;
         disputeWindow = disputeWindow_;
         collateralBps = collateralBps_;
     }
 
     modifier onlyVendor() {
         if (msg.sender != vendor) revert OnlyVendor();
+        _;
+    }
+
+    modifier onlyTreasury() {
+        if (msg.sender != treasury) revert OnlyTreasury();
         _;
     }
 
@@ -142,6 +155,7 @@ contract StakeAndAdvance is IReceiver, ReentrancyGuard {
         });
 
         vendorCreditAllocationTotal[vendor] += creditAllocation;
+        collateralReservedTotal += collateral;
         usdc.safeTransferFrom(msg.sender, address(this), amount);
 
         emit Deposited(stakeId, user, vendor, msg.sender, amount, collateral, creditAllocation);
@@ -190,6 +204,35 @@ contract StakeAndAdvance is IReceiver, ReentrancyGuard {
         usdc.safeTransferFrom(msg.sender, address(this), amount);
 
         emit Repaid(msg.sender, amount, outstanding - amount);
+    }
+
+    function setTreasury(address newTreasury) external onlyVendor {
+        if (newTreasury == address(0)) revert InvalidAddress();
+
+        address previousTreasury = treasury;
+        treasury = newTreasury;
+
+        emit TreasuryUpdated(previousTreasury, newTreasury);
+    }
+
+    function pullCollateralForYield(uint256 amount) external onlyTreasury nonReentrant {
+        if (amount == 0) revert InvalidAmount();
+        if (collateralInYield + amount > collateralReservedTotal) revert InvalidAmount();
+
+        collateralInYield += amount;
+        usdc.safeTransfer(treasury, amount);
+
+        emit CollateralPulledForYield(treasury, amount);
+    }
+
+    function returnCollateralFromYield(uint256 amount) external onlyTreasury nonReentrant {
+        if (amount == 0) revert InvalidAmount();
+        if (amount > collateralInYield) revert InvalidAmount();
+
+        collateralInYield -= amount;
+        usdc.safeTransferFrom(treasury, address(this), amount);
+
+        emit CollateralReturnedFromYield(treasury, amount);
     }
 
     function cancel(uint256 stakeId) external nonReentrant {
@@ -310,6 +353,7 @@ contract StakeAndAdvance is IReceiver, ReentrancyGuard {
 
     function _removeAllocation(Stake storage stake) internal {
         vendorCreditAllocationTotal[stake.vendor] -= stake.creditAllocation;
+        collateralReservedTotal -= stake.collateral;
     }
 
     function _reducePriorityObligation(address vendor_, uint256 amount) internal {

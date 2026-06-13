@@ -5,6 +5,7 @@
   "scripts": {
     "contracts:build": "forge build --root contracts",
     "contracts:test": "forge test --root contracts",
+    "server:dev": "tsx server/index.ts",
     "lifi:intake": "tsx keeper/intake.ts",
     "lifi:yield": "tsx keeper/yieldE2E.ts",
     "keeper:auto-release": "tsx keeper/autoRelease.ts",

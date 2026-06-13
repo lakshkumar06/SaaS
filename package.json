@@ -4,7 +4,9 @@
   "type": "module",
   "scripts": {
     "contracts:build": "forge build --root contracts",
-    "contracts:test": "forge test --root contracts"
+    "contracts:test": "forge test --root contracts",
+    "keeper:auto-release": "tsx keeper/autoRelease.ts",
+    "keeper:yield-quote": "tsx keeper/yield.ts"
   },
   "dependencies": {
     "@chainlink/cre-sdk": "^1.6.0",
@@ -12,5 +14,7 @@
     "typescript": "^5.6.0",
     "viem": "^2.21.0"
   },
-  "devDependencies": {}
+  "devDependencies": {
+    "tsx": "^4.19.0"
+  }
 }

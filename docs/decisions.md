@@ -17,17 +17,23 @@ Use the ERC-20 USDC interface for all balances, allowances, and transfers. Arc's
 native gas token exposes 18 decimals, while the ERC-20 interface exposes 6
 decimals.
 
-## LI.FI Composer
+## World ID Personhood
 
-- API base URL: `https://li.quest/v1`
-- API key: optional for baseline usage, provided via `x-lifi-api-key` when set
-- Composer detection: returned quote has `tool === "composer"`
-- Yield routing: Composer activates when `toToken` is a supported
-  vault/staking/deposit token.
-
-Arc destination support and yield venue availability still need a live
-`/chains?chainTypes=EVM` and quote check from the target demo wallet. If Arc yield
-is unavailable, route collateral to Base Aave V3 as the TDD fallback.
+- Purpose: one free subscription claim per verified human.
+- Backend route: `POST /worldid/verify`.
+- Dev mode: `WORLD_ID_MODE=dev` issues a deterministic nullifier for terminal
+  testing without a World App QR flow.
+- Cloud mode: `WORLD_ID_MODE=cloud` forwards the IDKit proof to
+  `WORLD_VERIFY_URL` with `WORLD_APP_ID`, `WORLD_ACTION`, and the user signal.
+- Contract path:
+  `depositWithPersonhood(address user, uint256 amount, bytes32 nullifierHash, uint64 deadline, bytes signature)`.
+- Voucher: backend signs EIP-712
+  `Personhood(address user, bytes32 nullifierHash, uint64 deadline)` with
+  `WORLD_ID_SIGNER_PRIVATE_KEY`.
+- Replay protection: the contract stores `usedNullifier[nullifierHash]`, so the
+  same personhood nullifier cannot claim twice.
+- Vendor setup: after deploy, the vendor calls `setWorldIdSigner(address)` with
+  the backend signer address.
 
 ## Chainlink CRE
 

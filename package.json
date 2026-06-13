@@ -6,10 +6,7 @@
     "contracts:build": "forge build --root contracts",
     "contracts:test": "forge test --root contracts",
     "server:dev": "tsx server/index.ts",
-    "lifi:intake": "tsx keeper/intake.ts",
-    "lifi:yield": "tsx keeper/yieldE2E.ts",
-    "keeper:auto-release": "tsx keeper/autoRelease.ts",
-    "keeper:yield-quote": "tsx keeper/yield.ts"
+    "keeper:auto-release": "tsx keeper/autoRelease.ts"
   },
   "dependencies": {
     "@chainlink/cre-sdk": "^1.6.0",

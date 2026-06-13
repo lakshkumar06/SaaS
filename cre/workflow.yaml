@@ -1,0 +1,11 @@
+name: stake-and-advance-underwriting
+description: Confidential AI underwriting report for StakeAndAdvance credit caps.
+triggers:
+  - type: http
+    name: underwrite-vendor
+secrets:
+  - CONFIDENTIAL_AI_ENDPOINT
+  - CONFIDENTIAL_AI_API_KEY
+env:
+  ARC_CHAIN_ID: "5042002"
+  STAKE_AND_ADVANCE_ADDRESS: "${STAKE_AND_ADVANCE_ADDRESS}"

@@ -1,0 +1,4 @@
+name: stake-and-advance
+language: typescript
+source: src/creditUnderwriting.ts
+workflow: workflow.yaml

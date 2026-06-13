@@ -37,6 +37,14 @@ is unavailable, route collateral to Base Aave V3 as the TDD fallback.
 - Report payload for this MVP: `abi.encode(address vendor, uint256 cap, uint64 expiry)`
 - Confidential inference path: CRE Confidential HTTP request with sandbox
   endpoint/API key supplied outside the repository.
+- Credit-limit policy:
+  - vendor history comes from this platform's onchain repayment track record
+  - the contract exposes drawdowns, repayment count, on-time repayments, late
+    repayments, total repaid, current outstanding debt, and current debt due date
+  - if platform history exists, CRE derives a cap from confidential underwriting
+    plus the platform repayment record
+  - if no platform history exists, CRE reports a cap equal to `40%` of the
+    vendor's current credit allocation
 
 The Arc testnet KeystoneForwarder address still needs final confirmation from
 the current Chainlink forwarder directory or hackathon resources before deploy.

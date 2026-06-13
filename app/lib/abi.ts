@@ -72,4 +72,19 @@ export const stakeAndAdvanceAbi = [
     inputs: [{ name: "vendor", type: "address" }],
     outputs: [{ name: "", type: "uint256" }],
   },
+  {
+    type: "function",
+    name: "platformTrackRecord",
+    stateMutability: "view",
+    inputs: [{ name: "vendor", type: "address" }],
+    outputs: [
+      { name: "drawdownCount", type: "uint256" },
+      { name: "repaymentCount", type: "uint256" },
+      { name: "onTimeCount", type: "uint256" },
+      { name: "lateCount", type: "uint256" },
+      { name: "repaidAmount", type: "uint256" },
+      { name: "outstandingDebt", type: "uint256" },
+      { name: "debtDueAt", type: "uint64" },
+    ],
+  },
 ] as const;

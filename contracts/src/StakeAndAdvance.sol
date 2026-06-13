@@ -10,6 +10,7 @@ contract StakeAndAdvance is IReceiver, ReentrancyGuard {
     using SafeERC20 for IERC20;
 
     uint16 public constant BPS = 10_000;
+    uint64 public constant REPAYMENT_WINDOW = 30 days;
 
     enum StakeState {
         None,
@@ -52,6 +53,12 @@ contract StakeAndAdvance is IReceiver, ReentrancyGuard {
     mapping(address vendor => uint256 allocation) public vendorCreditAllocationTotal;
     mapping(address vendor => uint256 debt) public currentOutstandingDebt;
     mapping(address vendor => uint256 obligation) public priorityObligation;
+    mapping(address vendor => uint256 count) public platformDrawdownCount;
+    mapping(address vendor => uint256 count) public platformRepaymentCount;
+    mapping(address vendor => uint256 count) public onTimeRepaymentCount;
+    mapping(address vendor => uint256 count) public lateRepaymentCount;
+    mapping(address vendor => uint256 amount) public totalRepaidAmount;
+    mapping(address vendor => uint64 dueAt) public currentDebtDueAt;
 
     mapping(address vendor => uint256 cap) internal _vendorCreditCap;
     mapping(address vendor => uint64 expiry) internal _vendorCapExpiry;
@@ -67,6 +74,7 @@ contract StakeAndAdvance is IReceiver, ReentrancyGuard {
     );
     event DrawnDown(address indexed vendor, uint256 amount, uint256 outstandingDebt);
     event Repaid(address indexed vendor, uint256 amount, uint256 outstandingDebt);
+    event RepaymentCycleClosed(address indexed vendor, bool onTime, uint64 dueAt);
     event TreasuryUpdated(address indexed previousTreasury, address indexed newTreasury);
     event CollateralPulledForYield(address indexed treasury, uint256 amount);
     event CollateralReturnedFromYield(address indexed treasury, uint256 amount);
@@ -181,13 +189,42 @@ contract StakeAndAdvance is IReceiver, ReentrancyGuard {
         return _vendorCapExpiry[vendor_];
     }
 
+    function platformTrackRecord(address vendor_)
+        external
+        view
+        returns (
+            uint256 drawdownCount,
+            uint256 repaymentCount,
+            uint256 onTimeCount,
+            uint256 lateCount,
+            uint256 repaidAmount,
+            uint256 outstandingDebt,
+            uint64 debtDueAt
+        )
+    {
+        return (
+            platformDrawdownCount[vendor_],
+            platformRepaymentCount[vendor_],
+            onTimeRepaymentCount[vendor_],
+            lateRepaymentCount[vendor_],
+            totalRepaidAmount[vendor_],
+            currentOutstandingDebt[vendor_],
+            currentDebtDueAt[vendor_]
+        );
+    }
+
     function drawdown(uint256 amount) external onlyVendor nonReentrant {
         if (amount == 0) revert InvalidAmount();
 
-        uint256 nextDebt = currentOutstandingDebt[msg.sender] + amount;
+        uint256 outstanding = currentOutstandingDebt[msg.sender];
+        uint256 nextDebt = outstanding + amount;
         if (nextDebt > effectiveCreditLimit(msg.sender)) revert CreditLimitExceeded();
 
         currentOutstandingDebt[msg.sender] = nextDebt;
+        platformDrawdownCount[msg.sender] += 1;
+        if (outstanding == 0) {
+            currentDebtDueAt[msg.sender] = uint64(block.timestamp + REPAYMENT_WINDOW);
+        }
         usdc.safeTransfer(msg.sender, amount);
 
         emit DrawnDown(msg.sender, amount, nextDebt);
@@ -199,11 +236,17 @@ contract StakeAndAdvance is IReceiver, ReentrancyGuard {
         uint256 outstanding = currentOutstandingDebt[msg.sender];
         if (amount > outstanding) revert RepayTooLarge();
 
-        currentOutstandingDebt[msg.sender] = outstanding - amount;
+        uint256 nextOutstanding = outstanding - amount;
+        currentOutstandingDebt[msg.sender] = nextOutstanding;
         _reducePriorityObligation(msg.sender, amount);
+        totalRepaidAmount[msg.sender] += amount;
         usdc.safeTransferFrom(msg.sender, address(this), amount);
 
-        emit Repaid(msg.sender, amount, outstanding - amount);
+        if (nextOutstanding == 0) {
+            _closeRepaymentCycle(msg.sender);
+        }
+
+        emit Repaid(msg.sender, amount, nextOutstanding);
     }
 
     function setTreasury(address newTreasury) external onlyVendor {
@@ -360,5 +403,20 @@ contract StakeAndAdvance is IReceiver, ReentrancyGuard {
         uint256 obligation = priorityObligation[vendor_];
         if (obligation == 0) return;
         priorityObligation[vendor_] = amount >= obligation ? 0 : obligation - amount;
+    }
+
+    function _closeRepaymentCycle(address vendor_) internal {
+        uint64 dueAt = currentDebtDueAt[vendor_];
+        bool onTime = dueAt == 0 || block.timestamp <= dueAt;
+
+        platformRepaymentCount[vendor_] += 1;
+        if (onTime) {
+            onTimeRepaymentCount[vendor_] += 1;
+        } else {
+            lateRepaymentCount[vendor_] += 1;
+        }
+
+        currentDebtDueAt[vendor_] = 0;
+        emit RepaymentCycleClosed(vendor_, onTime, dueAt);
     }
 }

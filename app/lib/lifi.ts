@@ -2,6 +2,7 @@ import { ARC_TESTNET_CHAIN_ID, ARC_TESTNET_USDC, STAKE_AND_ADVANCE_ADDRESS } fro
 
 const LIFI_BASE_URL = "https://li.quest/v1";
 const DEPOSIT_SELECTOR = "0x47e7ef24";
+const DEFAULT_DEPOSIT_GAS_LIMIT = "350000";
 
 export type IntakeQuoteInput = {
   fromChain: number;
@@ -9,7 +10,8 @@ export type IntakeQuoteInput = {
   fromAmount: string;
   fromAddress: string;
   user: string;
-  slippage?: string;
+  slippage?: number;
+  toContractGasLimit?: string;
 };
 
 export type YieldQuoteInput = {
@@ -17,7 +19,32 @@ export type YieldQuoteInput = {
   treasuryAddress: string;
   toChain: number;
   toToken: string;
-  slippage?: string;
+  slippage?: number;
+};
+
+export type LifiTransactionRequest = {
+  from?: string;
+  to: string;
+  chainId: number;
+  data?: `0x${string}`;
+  value?: string;
+  gasLimit?: string;
+  gasPrice?: string;
+};
+
+export type LifiQuoteResponse = {
+  ok: boolean;
+  status?: number;
+  error?: unknown;
+  quote?: {
+    id?: string;
+    tool?: string;
+    transactionRequest?: LifiTransactionRequest;
+    includedSteps?: Array<{ tool?: string; type?: string }>;
+    estimate?: unknown;
+  };
+  isComposer?: boolean;
+  includedTools?: string[];
 };
 
 export function encodeDepositCall(user: string, amount: string): `0x${string}` {
@@ -34,21 +61,30 @@ export function encodeDepositCall(user: string, amount: string): `0x${string}` {
 
 export async function getIntakeQuote(input: IntakeQuoteInput) {
   const calldata = encodeDepositCall(input.user, input.fromAmount);
-  const params = new URLSearchParams({
+  const body = {
     fromChain: String(input.fromChain),
     toChain: String(ARC_TESTNET_CHAIN_ID),
     fromToken: normalizeAddress(input.fromToken),
     toToken: ARC_TESTNET_USDC,
-    fromAmount: input.fromAmount,
+    toAmount: input.fromAmount,
     fromAddress: normalizeAddress(input.fromAddress),
-    toAddress: STAKE_AND_ADVANCE_ADDRESS,
-    toContractAddress: STAKE_AND_ADVANCE_ADDRESS,
-    toContractCallData: calldata,
     integrator: "stake-and-advance",
-    slippage: input.slippage ?? "0.005",
-  });
+    slippage: input.slippage ?? 0.005,
+    allowDestinationCall: true,
+    contractCalls: [
+      {
+        fromAmount: input.fromAmount,
+        fromTokenAddress: ARC_TESTNET_USDC,
+        toTokenAddress: ARC_TESTNET_USDC,
+        toContractAddress: STAKE_AND_ADVANCE_ADDRESS,
+        toContractCallData: calldata,
+        toContractGasLimit: input.toContractGasLimit ?? DEFAULT_DEPOSIT_GAS_LIMIT,
+        toFallbackAddress: normalizeAddress(input.user),
+      },
+    ],
+  };
 
-  return fetchLifiQuote(params);
+  return fetchLifiContractCallsQuote(body);
 }
 
 export async function getYieldQuote(input: YieldQuoteInput) {
@@ -62,24 +98,84 @@ export async function getYieldQuote(input: YieldQuoteInput) {
     fromAddress: treasury,
     toAddress: treasury,
     integrator: "stake-and-advance",
-    slippage: input.slippage ?? "0.005",
+    slippage: String(input.slippage ?? 0.005),
   });
 
   return fetchLifiQuote(params);
 }
 
-async function fetchLifiQuote(params: URLSearchParams) {
+export async function getLifiStatus(input: {
+  txHash: string;
+  fromChain: number;
+  toChain: number;
+  bridge?: string;
+}) {
+  const params = new URLSearchParams({
+    txHash: input.txHash,
+    fromChain: String(input.fromChain),
+    toChain: String(input.toChain),
+  });
+  if (input.bridge) {
+    params.set("bridge", input.bridge);
+  }
+
+  const response = await fetch(`${LIFI_BASE_URL}/status?${params.toString()}`, {
+    headers: lifiHeaders(),
+    cache: "no-store",
+  });
+
+  const body = await response.json();
+  if (!response.ok) {
+    return {
+      ok: false,
+      status: response.status,
+      error: body,
+    };
+  }
+
+  return {
+    ok: true,
+    status: response.status,
+    result: body,
+  };
+}
+
+function lifiHeaders(json = false): Record<string, string> {
   const headers: Record<string, string> = {};
   if (process.env.LIFI_API_KEY) {
     headers["x-lifi-api-key"] = process.env.LIFI_API_KEY;
   }
 
+  if (json) {
+    headers["content-type"] = "application/json";
+  }
+
+  return headers;
+}
+
+async function fetchLifiQuote(params: URLSearchParams): Promise<LifiQuoteResponse> {
   const response = await fetch(`${LIFI_BASE_URL}/quote?${params.toString()}`, {
-    headers,
+    headers: lifiHeaders(),
     cache: "no-store",
   });
 
+  return parseLifiQuoteResponse(response);
+}
+
+async function fetchLifiContractCallsQuote(body: unknown): Promise<LifiQuoteResponse> {
+  const response = await fetch(`${LIFI_BASE_URL}/quote/contractCalls`, {
+    method: "POST",
+    headers: lifiHeaders(true),
+    body: JSON.stringify(body),
+    cache: "no-store",
+  });
+
+  return parseLifiQuoteResponse(response);
+}
+
+async function parseLifiQuoteResponse(response: Response): Promise<LifiQuoteResponse> {
   const body = await response.json();
+
   if (!response.ok) {
     return {
       ok: false,

@@ -10,7 +10,7 @@ export async function GET(request: NextRequest) {
       treasuryAddress: required(search, "treasuryAddress"),
       toChain: requiredNumber(search, "toChain"),
       toToken: required(search, "toToken"),
-      slippage: search.get("slippage") ?? undefined,
+      slippage: optionalNumber(search, "slippage"),
     });
 
     return NextResponse.json(quote, { status: quote.ok ? 200 : 502 });
@@ -31,5 +31,14 @@ function required(search: URLSearchParams, key: string) {
 function requiredNumber(search: URLSearchParams, key: string) {
   const value = Number(required(search, key));
   if (!Number.isSafeInteger(value) || value <= 0) throw new Error(`invalid ${key}`);
+  return value;
+}
+
+function optionalNumber(search: URLSearchParams, key: string) {
+  const raw = search.get(key);
+  if (!raw) return undefined;
+
+  const value = Number(raw);
+  if (!Number.isFinite(value) || value < 0 || value > 1) throw new Error(`invalid ${key}`);
   return value;
 }

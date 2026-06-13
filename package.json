@@ -5,6 +5,8 @@
   "scripts": {
     "contracts:build": "forge build --root contracts",
     "contracts:test": "forge test --root contracts",
+    "lifi:intake": "tsx keeper/intake.ts",
+    "lifi:yield": "tsx keeper/yieldE2E.ts",
     "keeper:auto-release": "tsx keeper/autoRelease.ts",
     "keeper:yield-quote": "tsx keeper/yield.ts"
   },
@@ -15,6 +17,7 @@
     "viem": "^2.21.0"
   },
   "devDependencies": {
+    "@types/node": "^22.10.0",
     "tsx": "^4.19.0"
   }
 }

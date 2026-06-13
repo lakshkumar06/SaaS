@@ -15,7 +15,7 @@ async function main() {
     fromAmount,
     toChain,
     toToken,
-    slippage: process.env.SLIPPAGE,
+    slippage: process.env.SLIPPAGE ? Number(process.env.SLIPPAGE) : undefined,
   });
 
   console.log(JSON.stringify(quote, null, 2));

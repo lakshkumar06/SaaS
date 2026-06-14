@@ -14,20 +14,23 @@ interface Vm {
 contract Deploy {
     Vm internal constant vm = Vm(address(uint160(uint256(keccak256("hevm cheat code")))));
 
-    uint16 internal constant DEFAULT_COLLATERAL_BPS = 6000;
-    uint64 internal constant DEFAULT_DISPUTE_WINDOW = 10 minutes;
+    uint64 internal constant DEFAULT_REPAYMENT_WINDOW = 30 days;
+    uint64 internal constant DEFAULT_GRACE_PERIOD = 7 days;
+    uint16 internal constant DEFAULT_MIN_RESERVE_BPS = 2000;
 
     function run() external returns (StakeAndAdvance deployed) {
         address usdc = vm.envAddress("USDC_ADDRESS");
-        address arbiter = vm.envAddress("ARBITER_ADDRESS");
         address keystoneForwarder = vm.envAddress("KEYSTONE_FORWARDER");
-        uint64 disputeWindow =
-            uint64(vm.envOr("DISPUTE_WINDOW_SECONDS", uint256(DEFAULT_DISPUTE_WINDOW)));
-        uint16 collateralBps = uint16(vm.envOr("COLLATERAL_BPS", uint256(DEFAULT_COLLATERAL_BPS)));
+        uint64 repaymentWindow =
+            uint64(vm.envOr("REPAYMENT_WINDOW_SECONDS", uint256(DEFAULT_REPAYMENT_WINDOW)));
+        uint64 gracePeriod =
+            uint64(vm.envOr("DEFAULT_GRACE_SECONDS", uint256(DEFAULT_GRACE_PERIOD)));
+        uint16 minReserveBps =
+            uint16(vm.envOr("MIN_RESERVE_BPS", uint256(DEFAULT_MIN_RESERVE_BPS)));
 
         vm.startBroadcast();
         deployed = new StakeAndAdvance(
-            IERC20(usdc), arbiter, keystoneForwarder, disputeWindow, collateralBps
+            IERC20(usdc), keystoneForwarder, repaymentWindow, gracePeriod, minReserveBps
         );
         vm.stopBroadcast();
     }

@@ -20,8 +20,7 @@ pools, the lenders are the company's own customers.
 | Dynamic seam | `depositFor(member, amount)` supports relayer or embedded-wallet deposits |
 | Unlink seam | Future private balances/positions |
 
-World ID is intentionally removed. Once deposits cost real USDC, there is no free subscription to
-sybil-farm; money is the gate.
+Paid USDC deposits are the access gate; no separate personhood gate is needed.
 
 ## Commands
 

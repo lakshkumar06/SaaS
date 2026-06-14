@@ -14,17 +14,10 @@ from the pool under Chainlink-delivered terms. Interest paid raises NAV. Default
 Accrued but unpaid interest is not counted as an asset. This avoids promising members money that has
 not actually been paid into the pool.
 
-## World ID
+## Access Gate
 
-World ID is removed. It solved the old "one free subscription per human" problem, but the current
-product is a paid deposit and lending pool. Depositing USDC is the gate.
-
-Removed surface:
-
-- `depositWithPersonhood`
-- nullifier tracking
-- EIP-712 personhood vouchers
-- `/worldid/*` backend routes
+The product uses paid USDC deposits as the gate. There is no separate personhood or free-tier gate in
+the current architecture.
 
 ## Chainlink
 

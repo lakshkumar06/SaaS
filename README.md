@@ -20,9 +20,21 @@ and the lenders are the company's own customers rather than institutional LPs.
 | RPC | `https://rpc.testnet.arc.network` |
 | Explorer | `https://testnet.arcscan.app` |
 | USDC | `0x3600000000000000000000000000000000000000` |
-| Pool contract | `0x08B7F322a12FBee6B6E1e745302D12422465533D` |
+| Pool contract | `0xAe632832f9a588DeCe304B1f1cCb946B3cEd79e1` |
 
 Frontend wiring lives in [FRONTEND.md](/Users/lakshkumar/Desktop/SaaS/FRONTEND.md).
+
+## Frontend Env
+
+The React dashboard reads these Vite env vars:
+
+- `VITE_DYNAMIC_ENVIRONMENT_ID`: required for wallet connect and write actions.
+- `VITE_API_BASE_URL`: optional; defaults to `http://127.0.0.1:8788`.
+- `VITE_STAKE_AND_ADVANCE_ADDRESS`: optional; defaults to the live demo pool address above.
+
+If `VITE_DYNAMIC_ENVIRONMENT_ID` is missing, the frontend stays available in read-only mode and disables wallet actions explicitly.
+
+For new Arc deployments, set `COMPANY_ADDRESS` to the vendor wallet before running `npm run deploy:arc`. That wallet is the only address allowed to draw down or repay.
 
 ## What The Demo Shows
 

@@ -55,8 +55,8 @@ The build is delivered against three bounties; each maps to a concrete part of t
 
 ```
                 ┌───────────────────────────────────────────────┐
-                │  Next.js app (checkout widget + dashboards)    │
-                │  - connect wallet (wagmi/viem)                 │
+                │  React app (Vite dashboard + widgets)          │
+                │  - connect wallet (Dynamic/viem)               │
                 │  - LI.FI Composer intake & withdraw            │
                 └───────────────┬───────────────────────────────┘
                                 │ getQuote / executeRoute (@lifi/sdk)
@@ -88,7 +88,7 @@ The build is delivered against three bounties; each maps to a concrete part of t
 - **`StakeAndAdvance.sol` (Arc):** custody of USDC, all credit/escrow/settlement accounting, dispute + auto-release, consumes the AI attestation, exposes collateral to a `treasury` role for yield routing. Source of truth.
 - **CRE workflow (TS):** off-chain underwriting via the Confidential AI sandbox; emits a signed report that sets `vendorCreditCap`.
 - **LI.FI backend/keeper + frontend (TS):** builds and executes Composer flows for intake and yield; holds no custody, pure orchestration.
-- **Next.js FE:** checkout widget, vendor dashboard (credit limit, draw/repay), user panel (cancel/dispute).
+- **React FE:** checkout widget, vendor dashboard (credit limit, draw/repay), user panel (cancel/dispute).
 
 **Three constraints that shape the code**
 - LI.FI Composer's **executor contract is `msg.sender`** on the destination call → `deposit` must take an explicit `user` param and credit *that* address, pulling tokens from the caller. Never key off `msg.sender` for the depositor.
@@ -105,7 +105,7 @@ The build is delivered against three bounties; each maps to a concrete part of t
 
 **LI.FI** — `@lifi/sdk@^4.0.0` + `@lifi/sdk-provider-ethereum`; REST base `https://li.quest/v1/` (`/quote`, `/chains`); optional key via `x-lifi-api-key` (portal.li.fi). No key required for hackathon volume.
 
-**Frontend** — Next.js (App Router) + TypeScript, `wagmi` + `viem`, Tailwind (optional), React Query. Arc added as a custom viem chain (id 5042002).
+**Frontend** — React + Vite + TypeScript, Dynamic + `viem`, Tailwind (optional). Arc added as a custom viem chain (id 5042002).
 
 **Docs to open before coding**
 - Arc: `https://developers.circle.com/` (USDC/EURC addresses, CCTP), `https://docs.arc.io/` (connect, EVM compatibility, contract addresses), faucet `https://faucet.circle.com`.
@@ -130,13 +130,11 @@ stake-and-advance/
 │  ├─ src/creditUnderwriting.ts
 │  ├─ workflow.yaml
 │  └─ project.yaml
-├─ app/                       # Next.js FE + API routes (BE)
-│  ├─ app/checkout/...        # LI.FI intake widget
-│  ├─ app/vendor/...          # credit limit, drawdown/repay
-│  ├─ app/account/...         # cancel / dispute
-│  ├─ app/api/lifi/quote/route.ts
-│  ├─ app/api/lifi/yield/route.ts   # treasury routing + unwind
+├─ src/                       # React FE
+│  ├─ App.tsx
+│  ├─ components/...
 │  └─ lib/{arcChain.ts,abi.ts,addresses.ts}
+├─ server/                    # backend API
 ├─ keeper/                    # auto-release + yield-routing cron (TS)
 ├─ docs/architecture.png
 └─ README.md
@@ -209,14 +207,14 @@ Each step lists **Goal / Files / Notes / Gate**. "Gate" is the concrete check th
 ### Phase D — Deploy to Arc testnet
 
 - **D1. Deploy script + addresses.**
-  - Files: `script/Deploy.s.sol`, `app/lib/addresses.ts`, `docs/decisions.md`.
+  - Files: `script/Deploy.s.sol`, `src/lib/addresses.ts`, `docs/decisions.md`.
   - Notes: deploy with the real Arc USDC, arbiter = dev wallet, forwarder from G0.3, `disputeWindow` ~ 10 min for demo. Verify on Arcscan if supported. Record the address everywhere.
   - Gate: contract live on Arc testnet; a manual `deposit`/`drawdown` via `cast` succeeds.
 
 ### Phase E — LI.FI Composer: cross-chain checkout intake
 
 - **E1. Quote API route.**
-  - Files: `app/api/lifi/quote/route.ts`, `app/lib/lifi.ts`.
+  - Files: `server/...`, `src/...`.
   - Notes: `createClient({integrator:'stake-and-advance'})`; build a `getQuote` where `fromChain` = user chain, `toChain` = 5042002 (or the resolved route), `fromToken` = user USDC, and the **destination is a custom contract call** to `deposit(user, amount)` via `toContractAddress` + `toContractCallData` (ABI-encode the deposit call). Confirm `quote.tool === 'composer'`.
   - Gate: route returns a Composer quote whose `includedSteps` show swap/bridge + the contract call.
 
@@ -277,8 +275,8 @@ Submission checklist: working FE+BE ✔, architecture diagram ✔, ≤3–5 min 
 - `contracts/src/StakeAndAdvance.sol` — the whole on-chain product (deposit/split/credit/draw/repay/cancel/settle/dispute/autoRelease/onReport).
 - `contracts/test/{StakeAndAdvance,Dispute,Attestation}.t.sol` — Foundry gates for §6.
 - `cre/src/creditUnderwriting.ts` — Confidential AI → signed report → Arc.
-- `app/api/lifi/quote/route.ts`, `app/lib/lifi.ts`, `app/checkout/page.tsx` — Composer intake.
+- `server/...`, `src/...` — Composer intake.
 - `app/api/lifi/yield/route.ts`, `keeper/yield.ts` — Composer yield routing + unwind.
-- `script/Deploy.s.sol`, `app/lib/{arcChain,addresses,abi}.ts`, `docs/architecture.png`, `README.md`.
+- `script/Deploy.s.sol`, `src/lib/{arcChain,addresses,abi}.ts`, `docs/architecture.png`, `README.md`.
 TDD.md
 Displaying TDD.md.

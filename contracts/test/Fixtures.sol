@@ -13,6 +13,7 @@ contract Fixtures is TestBase {
     address internal reporter = address(0xBEEF);
     address internal alice = address(0xA11CE);
     address internal bob = address(0xB0B);
+    address internal company = address(this);
 
     uint256 internal constant USDC1 = 1e6;
     uint64 internal constant REPAYMENT_WINDOW = 30 days;
@@ -21,7 +22,7 @@ contract Fixtures is TestBase {
     function _deployPool(uint16 minReserveBps) internal {
         usdc = new MockUSDC();
         pool = new StakeAndAdvance(
-            IERC20(address(usdc)), reporter, REPAYMENT_WINDOW, GRACE, minReserveBps
+            IERC20(address(usdc)), company, reporter, REPAYMENT_WINDOW, GRACE, minReserveBps
         );
         usdc.mint(address(this), 1_000_000 * USDC1);
         usdc.approve(address(pool), type(uint256).max);
@@ -40,7 +41,7 @@ contract Fixtures is TestBase {
     }
 
     function _deliverTerms(uint256 cap, uint64 expiry, uint16 rateBps) internal {
-        bytes memory report = abi.encode(address(this), cap, expiry, rateBps);
+        bytes memory report = abi.encode(company, cap, expiry, rateBps);
         vm.prank(reporter);
         pool.onReport("", report);
     }

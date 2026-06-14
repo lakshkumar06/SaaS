@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import {
   createPublicClient,
   formatUnits,
@@ -6,22 +6,39 @@ import {
   parseUnits,
   type Address,
 } from "viem";
-import { DynamicConnectButton, useDynamicContext, type Wallet } from "@dynamic-labs/sdk-react-core";
+import {
+  DynamicConnectButton,
+  useDynamicContext,
+  type Wallet,
+} from "@dynamic-labs/sdk-react-core";
 import { isEthereumWallet } from "@dynamic-labs/ethereum";
 
 import {
-  CompanyPanel,
-  FooterSection,
+  AlertsSection,
   HeroSection,
   MemberPanel,
-  MetaSection,
-  StatsSection,
-  UnderwritePanel,
+  OperatorPanel,
+  VendorPanel,
+  type DashboardView,
 } from "./components/DashboardSections";
 import { stakeAndAdvanceAbi } from "./lib/abi";
-import { ARC_TESTNET_USDC, STAKE_AND_ADVANCE_ADDRESS } from "./lib/addresses";
+import { ARC_TESTNET_USDC } from "./lib/addresses";
 import { arcTestnet } from "./lib/arcChain";
-import type { MemberPosition, PoolState, UnderwritePayload, UnderwriteResult } from "./lib/dashboardTypes";
+import type {
+  MemberPosition,
+  PoolState,
+  UnderwritePayload,
+  UnderwriteResult,
+} from "./lib/dashboardTypes";
+import {
+  backendBase,
+  frontendWarnings,
+  stakeAndAdvanceAddress,
+} from "./lib/env";
+import { useDashboardView } from "./lib/dashboardView";
+import { USDC_DECIMALS } from "./lib/format";
+import { buildValueHistoryFromActivity } from "./lib/valueHistory";
+import { deserializePoolActivity, fetchPoolActivity, type PoolActivity, type PoolActivityDto } from "./lib/poolActivity";
 
 const erc20Abi = [
   {
@@ -38,11 +55,29 @@ const erc20Abi = [
 
 const publicClient = createPublicClient({
   chain: arcTestnet,
-  transport: http(arcTestnet.rpcUrls.default.http[0]),
+  transport: http(arcTestnet.rpcUrls.default.http[0], {
+    retryCount: 2,
+    retryDelay: 1_500,
+    timeout: 30_000,
+  }),
 });
 
-const backendBase =
-  import.meta.env.VITE_API_BASE_URL?.replace(/\/$/, "") || "http://127.0.0.1:8788";
+type BackendPoolState = {
+  company: Address;
+  totalAssets: string;
+  cash: string;
+  outstandingPrincipal: string;
+  totalShares: string;
+  navPerShare1e18: string;
+  creditCap: string;
+  capExpiry: string;
+  interestRateBps: number;
+  dueAt: string;
+  defaulted: boolean;
+  availableToBorrow: string;
+  accruedInterest: string;
+  defaultGracePeriod: string;
+};
 
 const defaultUnderwrite: UnderwritePayload = {
   vendor: "0x19E95b026731974B7c1feD9eb3c3113fBDD80464",
@@ -54,8 +89,17 @@ const defaultUnderwrite: UnderwritePayload = {
   delinquencyRateBps: 100,
 };
 
+type AppContentProps = {
+  connectControl: ReactNode;
+  currentView: DashboardView;
+  onViewChange: (view: DashboardView) => void;
+  primaryWallet?: Wallet | null;
+  wallet?: Address;
+  walletConnected: boolean;
+};
+
 function parseTokenInput(value: string) {
-  return parseUnits(value || "0", 18);
+  return parseUnits(value || "0", USDC_DECIMALS);
 }
 
 function parseUnderwriteValue(key: keyof UnderwritePayload, value: string) {
@@ -67,76 +111,49 @@ async function readPoolState(address?: Address): Promise<{
   pool: PoolState;
   member: MemberPosition;
 }> {
-  const [
-    poolState,
-    availableToBorrow,
-    accruedInterest,
-    defaultGracePeriod,
-    shares,
-  ] = await Promise.all([
-    publicClient.readContract({
-      address: STAKE_AND_ADVANCE_ADDRESS,
-      abi: stakeAndAdvanceAbi,
-      functionName: "poolState",
-    }),
-    publicClient.readContract({
-      address: STAKE_AND_ADVANCE_ADDRESS,
-      abi: stakeAndAdvanceAbi,
-      functionName: "availableToBorrow",
-    }),
-    publicClient.readContract({
-      address: STAKE_AND_ADVANCE_ADDRESS,
-      abi: stakeAndAdvanceAbi,
-      functionName: "accruedInterest",
-    }),
-    publicClient.readContract({
-      address: STAKE_AND_ADVANCE_ADDRESS,
-      abi: [
-        ...stakeAndAdvanceAbi,
-        {
-          type: "function",
-          name: "defaultGracePeriod",
-          stateMutability: "view",
-          inputs: [],
-          outputs: [{ name: "", type: "uint64" }],
-        },
-      ] as const,
-      functionName: "defaultGracePeriod",
-    }),
-    address
-      ? publicClient.readContract({
-          address: STAKE_AND_ADVANCE_ADDRESS,
-          abi: stakeAndAdvanceAbi,
-          functionName: "sharesOf",
-          args: [address],
-        })
-      : Promise.resolve(0n),
-  ]);
+  const res = await fetch(`${backendBase}/pool/state`);
+  if (!res.ok) {
+    throw new Error(`Pool state request failed (${res.status}). Is the backend running?`);
+  }
 
-  const redeemableAssets =
-    shares > 0n
-      ? await publicClient.readContract({
-          address: STAKE_AND_ADVANCE_ADDRESS,
-          abi: stakeAndAdvanceAbi,
-          functionName: "previewRedeem",
-          args: [shares],
-        })
-      : 0n;
+  const data = (await res.json()) as BackendPoolState;
+
+  let shares = 0n;
+  let redeemableAssets = 0n;
+
+  if (address) {
+    shares = await publicClient.readContract({
+      address: stakeAndAdvanceAddress,
+      abi: stakeAndAdvanceAbi,
+      functionName: "sharesOf",
+      args: [address],
+    });
+
+    if (shares > 0n) {
+      redeemableAssets = await publicClient.readContract({
+        address: stakeAndAdvanceAddress,
+        abi: stakeAndAdvanceAbi,
+        functionName: "previewRedeem",
+        args: [shares],
+      });
+    }
+  }
 
   return {
     pool: {
-      totalAssets: poolState[0],
-      cash: poolState[1],
-      outstandingPrincipal: poolState[2],
-      totalShares: poolState[3],
-      navPerShare1e18: poolState[4],
-      creditCap: poolState[5],
-      interestRateBps: Number(poolState[7]),
-      dueAt: BigInt(poolState[8]),
-      defaulted: poolState[9],
-      availableToBorrow,
-      accruedInterest,
-      defaultGracePeriod: BigInt(defaultGracePeriod),
+      company: data.company,
+      totalAssets: BigInt(data.totalAssets),
+      cash: BigInt(data.cash),
+      outstandingPrincipal: BigInt(data.outstandingPrincipal),
+      totalShares: BigInt(data.totalShares),
+      navPerShare1e18: BigInt(data.navPerShare1e18),
+      creditCap: BigInt(data.creditCap),
+      interestRateBps: data.interestRateBps,
+      dueAt: BigInt(data.dueAt),
+      defaulted: data.defaulted,
+      availableToBorrow: BigInt(data.availableToBorrow),
+      accruedInterest: BigInt(data.accruedInterest),
+      defaultGracePeriod: BigInt(data.defaultGracePeriod),
     },
     member: {
       shares,
@@ -159,10 +176,14 @@ async function walletClientAndAddress(primaryWallet: Wallet | null | undefined) 
   };
 }
 
-export default function App() {
-  const { primaryWallet, sdkHasLoaded } = useDynamicContext();
-  const wallet = primaryWallet?.address as Address | undefined;
-  const walletConnected = Boolean(wallet);
+function AppContent({
+  connectControl,
+  currentView,
+  onViewChange,
+  primaryWallet,
+  wallet,
+  walletConnected,
+}: AppContentProps) {
   const [pool, setPool] = useState<PoolState | null>(null);
   const [member, setMember] = useState<MemberPosition>({ shares: 0n, redeemableAssets: 0n });
   const [depositAmount, setDepositAmount] = useState("100");
@@ -173,25 +194,87 @@ export default function App() {
   const [underwriteResult, setUnderwriteResult] = useState<UnderwriteResult | null>(null);
   const [status, setStatus] = useState("Loading pool state...");
   const [busy, setBusy] = useState<string | null>(null);
+  const [valueHistory, setValueHistory] = useState<number[]>([]);
+  const [poolActivity, setPoolActivity] = useState<PoolActivity[]>([]);
+  const [activityLoading, setActivityLoading] = useState(false);
+  const refreshInFlight = useRef<Promise<void> | null>(null);
+
+  function updateValueHistory(
+    activity: PoolActivity[],
+    poolState: PoolState,
+    memberState: MemberPosition,
+    addr?: Address,
+  ) {
+    const headlineValue =
+      memberState.shares > 0n ? memberState.redeemableAssets : poolState.totalAssets;
+    const currentValue = Number(formatUnits(headlineValue || 0n, USDC_DECIMALS));
+    setValueHistory(
+      buildValueHistoryFromActivity(activity, currentValue, {
+        actor: addr,
+        memberOnly: memberState.shares > 0n,
+      }),
+    );
+  }
+
+  async function readPoolActivity(): Promise<PoolActivity[]> {
+    try {
+      const res = await fetch(`${backendBase}/pool/activity`);
+      if (res.ok) {
+        const data = (await res.json()) as { activities: PoolActivityDto[] };
+        return data.activities.map(deserializePoolActivity);
+      }
+    } catch {
+      // fall back to direct RPC below
+    }
+
+    return fetchPoolActivity(publicClient, stakeAndAdvanceAddress);
+  }
 
   async function refresh(addr = wallet) {
-    const data = await readPoolState(addr);
-    setPool(data.pool);
-    setMember(data.member);
+    if (refreshInFlight.current) {
+      await refreshInFlight.current;
+      return;
+    }
+
+    const request = Promise.all([
+      readPoolState(addr),
+      readPoolActivity().catch(() => [] as PoolActivity[]),
+    ])
+      .then(([data, activity]) => {
+        setPool(data.pool);
+        setMember(data.member);
+        setPoolActivity(activity);
+        setUnderwriteForm((current) => ({ ...current, vendor: data.pool.company }));
+        updateValueHistory(activity, data.pool, data.member, addr);
+      })
+      .finally(() => {
+        refreshInFlight.current = null;
+        setActivityLoading(false);
+      });
+
+    setActivityLoading(true);
+
+    refreshInFlight.current = request;
+    await request;
   }
 
   useEffect(() => {
-    refresh().then(
-      () => setStatus("Pool state synced from Arc testnet."),
-      (error: unknown) =>
-        setStatus(error instanceof Error ? error.message : "Failed to load pool state."),
-    );
-  }, []);
+    let cancelled = false;
 
-  useEffect(() => {
-    if (!sdkHasLoaded) return;
-    refresh(wallet).catch(() => undefined);
-  }, [sdkHasLoaded, wallet]);
+    refresh(wallet)
+      .then(() => {
+        if (!cancelled) setStatus("Pool state synced from Arc testnet.");
+      })
+      .catch((error: unknown) => {
+        if (!cancelled) {
+          setStatus(error instanceof Error ? error.message : "Failed to load pool state.");
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [wallet]);
 
   async function withBusy(label: string, action: () => Promise<void>) {
     setBusy(label);
@@ -223,12 +306,12 @@ export default function App() {
         abi: erc20Abi,
         functionName: "approve",
         account: address,
-        args: [STAKE_AND_ADVANCE_ADDRESS, amount],
+        args: [stakeAndAdvanceAddress, amount],
       });
       await publicClient.waitForTransactionReceipt({ hash: approveHash });
 
       const depositHash = await walletClient.writeContract({
-        address: STAKE_AND_ADVANCE_ADDRESS,
+        address: stakeAndAdvanceAddress,
         abi: stakeAndAdvanceAbi,
         functionName: "deposit",
         account: address,
@@ -244,10 +327,10 @@ export default function App() {
   async function redeem() {
     await withBusy("Redeeming shares", async () => {
       const { walletClient, address } = await walletClientAndAddress(primaryWallet);
-      const shares = parseTokenInput(redeemShares || formatUnits(member.shares, 18));
+      const shares = parseTokenInput(redeemShares || formatUnits(member.shares, USDC_DECIMALS));
 
       const redeemHash = await walletClient.writeContract({
-        address: STAKE_AND_ADVANCE_ADDRESS,
+        address: stakeAndAdvanceAddress,
         abi: stakeAndAdvanceAbi,
         functionName: "redeem",
         account: address,
@@ -256,7 +339,7 @@ export default function App() {
       await publicClient.waitForTransactionReceipt({ hash: redeemHash });
 
       await refresh(address);
-      setStatus(`Redeemed ${formatUnits(shares, 18)} shares.`);
+      setStatus(`Redeemed ${formatUnits(shares, USDC_DECIMALS)} shares.`);
     });
   }
 
@@ -264,7 +347,7 @@ export default function App() {
     await withBusy("Drawing down", async () => {
       const { walletClient, address } = await walletClientAndAddress(primaryWallet);
       const hash = await walletClient.writeContract({
-        address: STAKE_AND_ADVANCE_ADDRESS,
+        address: stakeAndAdvanceAddress,
         abi: stakeAndAdvanceAbi,
         functionName: "drawdown",
         account: address,
@@ -286,12 +369,12 @@ export default function App() {
         abi: erc20Abi,
         functionName: "approve",
         account: address,
-        args: [STAKE_AND_ADVANCE_ADDRESS, amount],
+        args: [stakeAndAdvanceAddress, amount],
       });
       await publicClient.waitForTransactionReceipt({ hash: approveHash });
 
       const repayHash = await walletClient.writeContract({
-        address: STAKE_AND_ADVANCE_ADDRESS,
+        address: stakeAndAdvanceAddress,
         abi: stakeAndAdvanceAbi,
         functionName: "repay",
         account: address,
@@ -308,7 +391,7 @@ export default function App() {
     await withBusy("Marking default", async () => {
       const { walletClient, address } = await walletClientAndAddress(primaryWallet);
       const hash = await walletClient.writeContract({
-        address: STAKE_AND_ADVANCE_ADDRESS,
+        address: stakeAndAdvanceAddress,
         abi: stakeAndAdvanceAbi,
         functionName: "markDefaulted",
         account: address,
@@ -339,25 +422,23 @@ export default function App() {
   }
 
   return (
-    <main className="mx-auto max-w-[1280px] px-3.5 pt-7 pb-12 sm:px-5 sm:pt-12 sm:pb-[72px]">
+    <main className="dashboard-shell">
       <HeroSection
         wallet={wallet}
-        poolAddress={STAKE_AND_ADVANCE_ADDRESS}
-        connectControl={
-          <DynamicConnectButton buttonClassName="btn-primary">
-            {wallet ? "Manage wallet" : "Connect wallet"}
-          </DynamicConnectButton>
-        }
+        currentView={currentView}
+        onViewChange={onViewChange}
+        connectControl={connectControl}
       />
 
-      <StatsSection pool={pool} />
+      <AlertsSection warnings={frontendWarnings} />
 
-      <MetaSection pool={pool} />
-
-      <section className="mb-[18px] grid gap-[18px] lg:grid-cols-3">
+      {currentView === "member" ? (
         <MemberPanel
           pool={pool}
           member={member}
+          valueHistory={valueHistory}
+          poolActivity={poolActivity}
+          activityLoading={activityLoading}
           depositAmount={depositAmount}
           redeemShares={redeemShares}
           busy={busy}
@@ -367,8 +448,10 @@ export default function App() {
           onDeposit={approveAndDeposit}
           onRedeem={redeem}
         />
+      ) : null}
 
-        <CompanyPanel
+      {currentView === "vendor" ? (
+        <VendorPanel
           pool={pool}
           drawAmount={drawAmount}
           repayAmount={repayAmount}
@@ -379,12 +462,16 @@ export default function App() {
           onDrawdown={drawdown}
           onRepay={repay}
         />
+      ) : null}
 
-        <UnderwritePanel
+      {currentView === "operator" ? (
+        <OperatorPanel
+          pool={pool}
           backendBase={backendBase}
           form={underwriteForm}
           result={underwriteResult}
           busy={busy}
+          walletConnected={walletConnected}
           onChange={(key, value) =>
             setUnderwriteForm((current) => ({
               ...current,
@@ -392,15 +479,48 @@ export default function App() {
             }))
           }
           onSubmit={runUnderwrite}
+          onMarkDefaulted={markDefaulted}
+          onRefresh={() => refreshWithStatus()}
         />
-      </section>
-
-      <FooterSection
-        busy={busy}
-        status={status}
-        onMarkDefaulted={markDefaulted}
-        onRefresh={() => refreshWithStatus()}
-      />
+      ) : null}
     </main>
+  );
+}
+
+export function DynamicDashboardApp() {
+  const { primaryWallet } = useDynamicContext();
+  const wallet = primaryWallet?.address as Address | undefined;
+  const [currentView, setCurrentView] = useDashboardView();
+
+  return (
+    <AppContent
+      currentView={currentView}
+      onViewChange={setCurrentView}
+      connectControl={
+        <DynamicConnectButton buttonClassName="btn-primary">
+          {wallet ? "Manage wallet" : "Connect wallet"}
+        </DynamicConnectButton>
+      }
+      primaryWallet={primaryWallet}
+      wallet={wallet}
+      walletConnected={Boolean(wallet)}
+    />
+  );
+}
+
+export function ReadonlyDashboardApp() {
+  const [currentView, setCurrentView] = useDashboardView();
+
+  return (
+    <AppContent
+      currentView={currentView}
+      onViewChange={setCurrentView}
+      connectControl={
+        <button className="btn-primary" disabled>
+          Wallet unavailable
+        </button>
+      }
+      walletConnected={false}
+    />
   );
 }

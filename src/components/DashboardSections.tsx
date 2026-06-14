@@ -1,7 +1,24 @@
 import type { ReactNode } from "react";
+import { useId, useState } from "react";
 import { formatUnits } from "viem";
 
-import { fmtAddress, fmtCompactNumber, fmtDate, fmtPct, fmtUsd, toUsdc } from "../lib/format";
+import { buildChartPoints, CHART_POINT_COUNT } from "../lib/valueHistory";
+import { buildChartCoords, buildSmoothPath, densifyPoints } from "../lib/chartPath";
+import type { PoolActivity } from "../lib/poolActivity";
+
+import {
+  fmtAddress,
+  fmtUsdAdaptive,
+  fmtDate,
+  fmtPct,
+  fmtUsd,
+  fmtUsdPrecise,
+  fmtTokenPrecise,
+  fmtRelativeTime,
+  NAV_DECIMALS,
+  toUsdc,
+  USDC_DECIMALS,
+} from "../lib/format";
 import type {
   MemberPosition,
   PoolState,
@@ -9,97 +26,221 @@ import type {
   UnderwriteResult,
 } from "../lib/dashboardTypes";
 
+export type DashboardView = "member" | "vendor" | "operator";
+
 type HeroSectionProps = {
   wallet?: string;
-  poolAddress: string;
+  currentView: DashboardView;
+  onViewChange: (view: DashboardView) => void;
   connectControl: ReactNode;
 };
 
-export function HeroSection({ wallet, poolAddress, connectControl }: HeroSectionProps) {
+export function HeroSection({
+  wallet,
+  currentView,
+  onViewChange,
+  connectControl,
+}: HeroSectionProps) {
   return (
-    <section className="mb-[22px] grid items-end gap-[18px] lg:grid-cols-[1.8fr_1fr]">
-      <div>
-        <p className="mb-2.5 text-xs tracking-[0.18em] text-accent uppercase">Arc Testnet Credit Pool</p>
-        <h1 className="mb-4 text-[clamp(3rem,8vw,6rem)] leading-[0.94]">Stake &amp; Advance</h1>
-        <p className="max-w-[62ch] text-[1.08rem] leading-relaxed text-muted">
-          One operating screen for LPs, borrowers, and keepers. Reads live pool state from Arc
-          testnet and sends underwriting to the local backend.
-        </p>
-      </div>
-      <div className="panel-surface grid gap-2.5 rounded-[28px] p-[22px]">
-        <p className="text-[0.94rem] text-muted">Connected wallet</p>
-        <strong>{fmtAddress(wallet)}</strong>
-        <span className="text-[0.94rem] text-muted">Pool {fmtAddress(poolAddress)}</span>
-        {connectControl}
+    <section className="dashboard-header">
+      <div className="dashboard-logo">Lattice</div>
+      <div className="topbar-actions">
+        <div className="mini-switcher" aria-label="Dashboard view">
+          {views.map((view) => (
+            <button
+              key={view.id}
+              type="button"
+              onClick={(event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                onViewChange(view.id);
+              }}
+              className={`mini-switch${currentView === view.id ? " is-active" : ""}`}
+            >
+              {view.title}
+            </button>
+          ))}
+        </div>
+        <div className="wallet-action" data-wallet={wallet ? fmtAddress(wallet) : "Read-only"}>
+          {connectControl}
+        </div>
       </div>
     </section>
   );
 }
 
-type StatsSectionProps = {
-  pool: PoolState | null;
+type AlertsSectionProps = {
+  warnings: string[];
 };
 
-export function StatsSection({ pool }: StatsSectionProps) {
-  const stats = pool
-    ? [
-        { label: "NAV", value: fmtUsd(pool.totalAssets) },
-        { label: "APR", value: fmtPct(pool.interestRateBps) },
-        { label: "Cash", value: fmtUsd(pool.cash) },
-        { label: "Outstanding Debt", value: fmtUsd(pool.outstandingPrincipal) },
-        { label: "Available Borrow", value: fmtUsd(pool.availableToBorrow) },
-        { label: "Accrued Interest", value: fmtUsd(pool.accruedInterest) },
-      ]
-    : [];
+export function AlertsSection({ warnings }: AlertsSectionProps) {
+  if (warnings.length === 0) return null;
 
   return (
-    <section className="my-[18px] grid gap-[18px] sm:grid-cols-2 xl:grid-cols-6">
-      {stats.map((item) => (
-        <article key={item.label} className="panel-surface rounded-[20px] p-[18px]">
-          <span className="text-[0.94rem] text-muted">{item.label}</span>
-          <strong className="mt-2 block text-[1.3rem]">{item.value}</strong>
+    <section className="dashboard-alerts">
+      {warnings.map((warning) => (
+        <article key={warning} className="alert-banner">
+          {warning}
         </article>
       ))}
     </section>
   );
 }
 
-type MetaSectionProps = {
-  pool: PoolState | null;
-};
+const views: Array<{ id: DashboardView; label: string; title: string; summary: string }> = [
+  {
+    id: "member",
+    label: "Portfolio",
+    title: "Member",
+    summary: "Position value, pool yield, deposit and redeem.",
+  },
+  {
+    id: "vendor",
+    label: "Credit Line",
+    title: "Vendor",
+    summary: "Borrowing headroom, debt balance, draw and repay.",
+  },
+  {
+    id: "operator",
+    label: "Operations",
+    title: "Operator",
+    summary: "Underwriting, refresh, and default management.",
+  },
+];
 
-export function MetaSection({ pool }: MetaSectionProps) {
+function TrendGraph({ points }: { points: number[] }) {
+  const gradientId = useId().replace(/:/g, "");
+  const width = 720;
+  const height = 220;
+  const smoothPoints = densifyPoints(points, 16);
+  const { coords } = buildChartCoords(smoothPoints, width, height);
+  const linePath = buildSmoothPath(coords);
+  const area = `${linePath} L ${coords[coords.length - 1]?.[0] ?? width} ${height} L ${coords[0]?.[0] ?? 0} ${height} Z`;
+  const lastPoint = coords[coords.length - 1];
+
   return (
-    <section className="mb-[18px] grid gap-[18px] sm:grid-cols-2 xl:grid-cols-4">
-      <div className="panel-surface rounded-[20px] p-[18px]">
-        <span className="text-[0.94rem] text-muted">NAV / share</span>
-        <strong className="mt-2 block text-[1.3rem]">
-          {pool ? `$${toUsdc(pool.navPerShare1e18, 18).toFixed(4)}` : "--"}
-        </strong>
+    <div className="trend-graph-shell">
+      <svg
+        viewBox={`0 0 ${width} ${height}`}
+        className="trend-graph"
+        preserveAspectRatio="none"
+        role="img"
+        aria-label="Portfolio value trend"
+      >
+        <defs>
+          <linearGradient id={`${gradientId}-area`} x1="0" x2="0" y1="0" y2="1">
+            <stop offset="0%" stopColor="#0a84ff" stopOpacity="0.28" />
+            <stop offset="45%" stopColor="#4db4ff" stopOpacity="0.12" />
+            <stop offset="100%" stopColor="#ffffff" stopOpacity="0" />
+          </linearGradient>
+          <linearGradient id={`${gradientId}-line`} x1="0" x2="1" y1="0" y2="0">
+            <stop offset="0%" stopColor="#005ce6" />
+            <stop offset="55%" stopColor="#0a84ff" />
+            <stop offset="100%" stopColor="#5cc8ff" />
+          </linearGradient>
+          <filter id={`${gradientId}-glow`} x="-20%" y="-20%" width="140%" height="140%">
+            <feGaussianBlur stdDeviation="2.4" result="blur" />
+            <feMerge>
+              <feMergeNode in="blur" />
+              <feMergeNode in="SourceGraphic" />
+            </feMerge>
+          </filter>
+        </defs>
+
+        {[0.22, 0.48, 0.74].map((level) => (
+          <line
+            key={level}
+            x1="0"
+            x2={width}
+            y1={height * level}
+            y2={height * level}
+            className="trend-grid-line"
+          />
+        ))}
+
+        <path d={area} fill={`url(#${gradientId}-area)`} className="trend-area" />
+        <path
+          d={linePath}
+          stroke={`url(#${gradientId}-line)`}
+          className="trend-path trend-path-glow"
+          filter={`url(#${gradientId}-glow)`}
+        />
+        <path d={linePath} stroke={`url(#${gradientId}-line)`} className="trend-path" />
+
+        {lastPoint ? (
+          <>
+            <circle cx={lastPoint[0]} cy={lastPoint[1]} r="11" className="trend-point-halo" />
+            <circle cx={lastPoint[0]} cy={lastPoint[1]} r="6" className="trend-point" />
+            <circle cx={lastPoint[0]} cy={lastPoint[1]} r="2.5" className="trend-point-core" />
+          </>
+        ) : null}
+      </svg>
+    </div>
+  );
+}
+
+type GraphPanelMode = "trend" | "activity";
+
+const graphPanelModes: Array<{ id: GraphPanelMode; label: string }> = [
+  { id: "trend", label: "Trend" },
+  { id: "activity", label: "Activity" },
+];
+
+function ActivityList({
+  activities,
+  loading,
+}: {
+  activities: PoolActivity[];
+  loading: boolean;
+}) {
+  if (loading) {
+    return (
+      <div className="activity-panel-shell">
+        <div className="activity-empty">Loading recent activity...</div>
       </div>
-      <div className="panel-surface rounded-[20px] p-[18px]">
-        <span className="text-[0.94rem] text-muted">Due at</span>
-        <strong className="mt-2 block text-[1.3rem]">{pool ? fmtDate(pool.dueAt) : "--"}</strong>
+    );
+  }
+
+  if (activities.length === 0) {
+    return (
+      <div className="activity-panel-shell">
+        <div className="activity-empty">No pool activity yet. Borrow, repay, deposit, and redeem events will show up here.</div>
       </div>
-      <div className="panel-surface rounded-[20px] p-[18px]">
-        <span className="text-[0.94rem] text-muted">Grace period</span>
-        <strong className="mt-2 block text-[1.3rem]">
-          {pool ? `${fmtCompactNumber(Number(pool.defaultGracePeriod) / 3600)} hrs` : "--"}
-        </strong>
-      </div>
-      <div className="panel-surface rounded-[20px] p-[18px]">
-        <span className="text-[0.94rem] text-muted">Status</span>
-        <strong className="mt-2 block text-[1.3rem]">
-          {pool ? (pool.defaulted ? "Defaulted" : "Active") : "--"}
-        </strong>
-      </div>
-    </section>
+    );
+  }
+
+  return (
+    <div className="activity-panel-shell">
+      <ul className="activity-list">
+        {activities.map((activity) => (
+          <li key={activity.id} className={`activity-row activity-row-${activity.kind}`}>
+            <div className="activity-row-main">
+              <div className="activity-row-title">
+                <span className="activity-kind-dot" aria-hidden="true" />
+                <strong>{activity.label}</strong>
+                {activity.amount !== undefined ? (
+                  <span className="activity-amount">{fmtUsdAdaptive(activity.amount)}</span>
+                ) : null}
+              </div>
+              <p className="activity-detail">{activity.detail}</p>
+            </div>
+            <div className="activity-row-meta">
+              <span>{fmtRelativeTime(activity.timestamp)}</span>
+              {activity.actor ? <span>{fmtAddress(activity.actor)}</span> : null}
+            </div>
+          </li>
+        ))}
+      </ul>
+    </div>
   );
 }
 
 type MemberPanelProps = {
   pool: PoolState | null;
   member: MemberPosition;
+  valueHistory: number[];
+  poolActivity: PoolActivity[];
+  activityLoading: boolean;
   depositAmount: string;
   redeemShares: string;
   busy: string | null;
@@ -113,6 +254,9 @@ type MemberPanelProps = {
 export function MemberPanel({
   pool,
   member,
+  valueHistory,
+  poolActivity,
+  activityLoading,
   depositAmount,
   redeemShares,
   busy,
@@ -122,58 +266,139 @@ export function MemberPanel({
   onDeposit,
   onRedeem,
 }: MemberPanelProps) {
+  const [graphMode, setGraphMode] = useState<GraphPanelMode>("trend");
+  const headlineValue =
+    member.shares > 0n ? member.redeemableAssets : (pool?.totalAssets ?? 0n);
+  const headlineLabel = member.shares > 0n ? "Account value" : "Pool NAV";
+  const headlineNote =
+    member.shares > 0n ? fmtTokenPrecise(member.redeemableAssets) : pool ? fmtTokenPrecise(pool.totalAssets) : "--";
+  const currentValue = Number(formatUnits(headlineValue || 0n, USDC_DECIMALS));
+  const points = buildChartPoints(valueHistory, currentValue, CHART_POINT_COUNT);
+
   return (
-    <article className="panel-surface grid content-start gap-3.5 rounded-[28px] p-[22px]">
-      <div className="mb-1 flex items-start justify-between gap-4 max-sm:flex-col">
-        <div>
-          <p className="mb-2.5 text-xs tracking-[0.18em] text-accent uppercase">Member</p>
-          <h2 className="text-[1.65rem]">Deposit and redeem</h2>
+    <section className="workspace-grid workspace-grid-member">
+      <article className="member-graph-panel">
+        <div className="graph-head">
+          <div>
+            <span className="eyebrow">{headlineLabel}</span>
+            <h2>{fmtUsdPrecise(headlineValue)}</h2>
+          </div>
+          <div className="graph-head-actions">
+            <div className="mini-switcher graph-panel-switcher" aria-label="Account value view">
+              {graphPanelModes.map((mode) => (
+                <button
+                  key={mode.id}
+                  type="button"
+                  onClick={() => setGraphMode(mode.id)}
+                  className={`mini-switch${graphMode === mode.id ? " is-active" : ""}`}
+                >
+                  {mode.label}
+                </button>
+              ))}
+            </div>
+            <span className="delta-positive">{headlineNote}</span>
+          </div>
         </div>
-        <div className="text-right max-sm:text-left">
-          <span className="text-[0.94rem] text-muted">
-            {pool ? formatUnits(member.shares, 18) : "--"} shares
-          </span>
-          <strong className="mt-1.5 block text-[1.1rem]">
-            {pool ? fmtUsd(member.redeemableAssets) : "--"} redeemable
-          </strong>
+        <div className="graph-frame">
+          {graphMode === "trend" ? (
+            <TrendGraph points={points} />
+          ) : (
+            <ActivityList activities={poolActivity} loading={activityLoading} />
+          )}
         </div>
-      </div>
+        <div className="member-stat-row">
+          <div>
+            <span className="eyebrow">Share balance</span>
+            <strong>{formatUnits(member.shares, USDC_DECIMALS)} shares</strong>
+          </div>
+          <div>
+            <span className="eyebrow">NAV / share</span>
+            <strong>{pool ? `$${toUsdc(pool.navPerShare1e18, NAV_DECIMALS).toFixed(4)}` : "--"}</strong>
+          </div>
+          <div>
+            <span className="eyebrow">Pool APR</span>
+            <strong>{pool ? fmtPct(pool.interestRateBps) : "--"}</strong>
+          </div>
+        </div>
+      </article>
 
-      <label className="grid gap-2 text-[0.96rem] text-muted">
-        Deposit amount
-        <input
-          className="field-input"
-          type="number"
-          min="0"
-          step="0.01"
-          value={depositAmount}
-          onChange={(e) => onDepositAmountChange(e.target.value)}
-        />
-      </label>
-      <button className="btn-primary" onClick={onDeposit} disabled={!!busy || !walletConnected}>
-        {busy === "Approving and depositing" ? "Submitting..." : "Approve + deposit"}
-      </button>
-
-      <label className="grid gap-2 text-[0.96rem] text-muted">
-        Redeem shares
-        <input
-          className="field-input"
-          type="number"
-          min="0"
-          step="0.0001"
-          placeholder={formatUnits(member.shares, 18)}
-          value={redeemShares}
-          onChange={(e) => onRedeemSharesChange(e.target.value)}
-        />
-      </label>
-      <button className="btn-primary" onClick={onRedeem} disabled={!!busy || !walletConnected}>
-        {busy === "Redeeming shares" ? "Submitting..." : "Redeem"}
-      </button>
-    </article>
+      <aside className="member-action-rail">
+        <div className="member-data-grid">
+          <label className="member-data-cell">
+            <span>Deposit amount</span>
+            <input
+              className="member-grid-input"
+              type="number"
+              min="0"
+              step="0.01"
+              value={depositAmount}
+              onChange={(e) => onDepositAmountChange(e.target.value)}
+            />
+          </label>
+          <label className="member-data-cell">
+            <span>Redeem shares</span>
+            <input
+              className="member-grid-input"
+              type="number"
+              min="0"
+              step="0.0001"
+              placeholder={formatUnits(member.shares, USDC_DECIMALS)}
+              value={redeemShares}
+              onChange={(e) => onRedeemSharesChange(e.target.value)}
+            />
+          </label>
+          <div className="member-data-cell">
+            <span>Redeemable today</span>
+            <strong>{fmtUsdPrecise(member.redeemableAssets)}</strong>
+          </div>
+          <div className="member-data-cell">
+            <span>Liquidity</span>
+            <strong>{pool ? fmtUsdPrecise(pool.cash) : "--"}</strong>
+          </div>
+        </div>
+        <div className="member-button-stack">
+          <button className="btn-primary member-action-button" onClick={onDeposit} disabled={!!busy || !walletConnected}>
+            {busy === "Approving and depositing" ? "Submitting" : "Deposit"}
+          </button>
+          <button className="btn-secondary member-action-button" onClick={onRedeem} disabled={!!busy || !walletConnected}>
+            {busy === "Redeeming shares" ? "Submitting" : "Redeem"}
+          </button>
+        </div>
+      </aside>
+    </section>
   );
 }
 
-type CompanyPanelProps = {
+function BorrowingProgress({ pool }: { pool: PoolState | null }) {
+  const utilization =
+    pool && pool.creditCap > 0n
+      ? Math.min(100, Number((pool.outstandingPrincipal * 10_000n) / pool.creditCap) / 100)
+      : 0;
+
+  return (
+    <div className="utilization-meter">
+      <div className="utilization-meter-head">
+        <span>Line utilization</span>
+        <strong>{pool ? `${utilization.toFixed(1)}%` : "--"}</strong>
+      </div>
+      <div
+        className="utilization-track"
+        role="progressbar"
+        aria-valuenow={utilization}
+        aria-valuemin={0}
+        aria-valuemax={100}
+        aria-label="Credit line utilization"
+      >
+        <div
+          className={`utilization-bar${utilization > 0 ? " has-fill" : ""}`}
+          style={{ width: `${utilization}%` }}
+        />
+      </div>
+    </div>
+  );
+}
+
+type VendorPanelProps = {
   pool: PoolState | null;
   drawAmount: string;
   repayAmount: string;
@@ -185,7 +410,7 @@ type CompanyPanelProps = {
   onRepay: () => void;
 };
 
-export function CompanyPanel({
+export function VendorPanel({
   pool,
   drawAmount,
   repayAmount,
@@ -195,50 +420,115 @@ export function CompanyPanel({
   onRepayAmountChange,
   onDrawdown,
   onRepay,
-}: CompanyPanelProps) {
+}: VendorPanelProps) {
   return (
-    <article className="panel-surface grid content-start gap-3.5 rounded-[28px] p-[22px]">
-      <div className="mb-1 flex items-start justify-between gap-4 max-sm:flex-col">
-        <div>
-          <p className="mb-2.5 text-xs tracking-[0.18em] text-accent uppercase">Company</p>
-          <h2 className="text-[1.65rem]">Borrow and repay</h2>
+    <section className="workspace-grid workspace-grid-vendor">
+      <article className="workspace-panel credit-panel">
+        <div className="workspace-heading">
+          <div>
+            <span className="eyebrow">Vendor credit</span>
+            <strong>Borrowing line</strong>
+          </div>
         </div>
-        <div className="text-right max-sm:text-left">
-          <span className="text-[0.94rem] text-muted">Credit cap</span>
-          <strong className="mt-1.5 block text-[1.1rem]">{pool ? fmtUsd(pool.creditCap) : "--"}</strong>
+        <div className="portfolio-balance">
+          <h2>{pool ? fmtUsd(pool.availableToBorrow) : "--"}</h2>
         </div>
-      </div>
+        <BorrowingProgress pool={pool} />
+        <div className="detail-list">
+          <div>
+            <span>Borrower wallet</span>
+            <strong>{pool ? fmtAddress(pool.company) : "--"}</strong>
+          </div>
+          <div>
+            <span>Underwritten cap</span>
+            <strong>{pool ? fmtUsd(pool.creditCap) : "--"}</strong>
+          </div>
+          <div>
+            <span>Outstanding debt</span>
+            <strong>{pool ? fmtUsdAdaptive(pool.outstandingPrincipal) : "--"}</strong>
+          </div>
+          <div>
+            <span>Pool APR</span>
+            <strong>{pool ? fmtPct(pool.interestRateBps) : "--"}</strong>
+          </div>
+          <div>
+            <span>Due date</span>
+            <strong>{pool ? fmtDate(pool.dueAt) : "--"}</strong>
+          </div>
+          <div>
+            <span>Utilization</span>
+            <strong>
+              {pool && pool.creditCap > 0n
+                ? `${((Number(pool.outstandingPrincipal) / Number(pool.creditCap)) * 100).toFixed(1)}%`
+                : "--"}
+            </strong>
+          </div>
+        </div>
+      </article>
 
-      <label className="grid gap-2 text-[0.96rem] text-muted">
-        Drawdown amount
-        <input
-          className="field-input"
-          type="number"
-          min="0"
-          step="0.01"
-          value={drawAmount}
-          onChange={(e) => onDrawAmountChange(e.target.value)}
-        />
-      </label>
-      <button className="btn-primary" onClick={onDrawdown} disabled={!!busy || !walletConnected}>
-        {busy === "Drawing down" ? "Submitting..." : "Draw down"}
-      </button>
-
-      <label className="grid gap-2 text-[0.96rem] text-muted">
-        Repay amount
-        <input
-          className="field-input"
-          type="number"
-          min="0"
-          step="0.01"
-          value={repayAmount}
-          onChange={(e) => onRepayAmountChange(e.target.value)}
-        />
-      </label>
-      <button className="btn-primary" onClick={onRepay} disabled={!!busy || !walletConnected}>
-        {busy === "Repaying" ? "Submitting..." : "Approve + repay"}
-      </button>
-    </article>
+      <article className="workspace-panel action-panel">
+        <div className="workspace-heading">
+          <div>
+            <span className="eyebrow">Treasury</span>
+            <strong>Draw or repay</strong>
+          </div>
+        </div>
+        <div className="form-grid">
+          <label className="field-stack">
+            <span>Drawdown amount</span>
+            <input
+              className="field-input"
+              type="number"
+              min="0"
+              step="0.01"
+              value={drawAmount}
+              onChange={(e) => onDrawAmountChange(e.target.value)}
+            />
+          </label>
+          <label className="field-stack">
+            <span>Repay amount</span>
+            <input
+              className="field-input"
+              type="number"
+              min="0"
+              step="0.01"
+              value={repayAmount}
+              onChange={(e) => onRepayAmountChange(e.target.value)}
+            />
+          </label>
+        </div>
+        <div className="button-row">
+          <button className="btn-primary" onClick={onDrawdown} disabled={!!busy || !walletConnected}>
+            {busy === "Drawing down" ? "Submitting..." : "Draw down"}
+          </button>
+          <button className="btn-secondary" onClick={onRepay} disabled={!!busy || !walletConnected}>
+            {busy === "Repaying" ? "Submitting..." : "Approve + repay"}
+          </button>
+        </div>
+        <div className="detail-list">
+          <div>
+            <span>Pool cash</span>
+            <strong>{pool ? fmtUsdAdaptive(pool.cash) : "--"}</strong>
+          </div>
+          <div>
+            <span>Borrow headroom</span>
+            <strong>
+              {pool
+                ? fmtUsd(
+                    pool.creditCap > pool.outstandingPrincipal
+                      ? pool.creditCap - pool.outstandingPrincipal
+                      : 0n,
+                  )
+                : "--"}
+            </strong>
+          </div>
+          <div>
+            <span>Borrower</span>
+            <strong>{pool ? fmtAddress(pool.company) : "--"}</strong>
+          </div>
+        </div>
+      </article>
+    </section>
   );
 }
 
@@ -251,7 +541,7 @@ type UnderwritePanelProps = {
   onSubmit: () => void;
 };
 
-export function UnderwritePanel({
+function UnderwritePanel({
   backendBase,
   form,
   result,
@@ -260,80 +550,134 @@ export function UnderwritePanel({
   onSubmit,
 }: UnderwritePanelProps) {
   return (
-    <article className="panel-surface grid content-start gap-3.5 rounded-[28px] p-[22px]">
-      <div className="mb-1 flex items-start justify-between gap-4">
+    <article className="workspace-panel underwriting-panel">
+      <div className="workspace-heading">
         <div>
-          <p className="mb-2.5 text-xs tracking-[0.18em] text-accent uppercase">Backend</p>
-          <h2 className="text-[1.65rem]">Underwrite vendor</h2>
+          <span className="eyebrow">Underwriting</span>
+          <strong>Credit terms</strong>
         </div>
-        <span className="text-[0.94rem] text-muted">{backendBase}</span>
       </div>
-
-      {(Object.keys(form) as Array<keyof UnderwritePayload>).map((key) => (
-        <label key={key} className="grid gap-2 text-[0.96rem] text-muted">
-          {key}
-          <input
-            className="field-input"
-            type={key === "vendor" ? "text" : "number"}
-            min={key === "vendor" ? undefined : "0"}
-            step={key === "vendor" ? undefined : "1"}
-            value={String(form[key])}
-            onChange={(e) => onChange(key, e.target.value)}
-          />
-        </label>
-      ))}
-
+      <div className="underwrite-grid">
+        {(Object.keys(form) as Array<keyof UnderwritePayload>).map((key) => (
+          <label key={key} className="field-stack">
+            <span>{key === "vendor" ? "pool company" : key}</span>
+            <input
+              className="field-input"
+              type={key === "vendor" ? "text" : "number"}
+              min={key === "vendor" ? undefined : "0"}
+              step={key === "vendor" ? undefined : "1"}
+              readOnly={key === "vendor"}
+              value={String(form[key])}
+              onChange={(e) => onChange(key, e.target.value)}
+            />
+          </label>
+        ))}
+      </div>
       <button className="btn-primary" onClick={onSubmit} disabled={!!busy}>
         {busy === "Running underwriting" ? "Posting report..." : "Run underwriting"}
       </button>
-
       {result ? (
-        <div className="grid gap-1.5 rounded-2xl bg-[rgba(12,108,86,0.08)] p-3.5 text-accent-strong">
-          <strong>Risk {result.inference.riskScore}</strong>
-          <span>Cap {fmtUsd(BigInt(result.cap))}</span>
-          <span>APR {fmtPct(result.interestRateBps)}</span>
-          <span>Tx {fmtAddress(result.txHash)}</span>
+        <div className="underwrite-result">
+          <div>
+            <span className="eyebrow">Risk</span>
+            <strong>{result.inference.riskScore}</strong>
+          </div>
+          <div>
+            <span className="eyebrow">Cap</span>
+            <strong>{fmtUsd(BigInt(result.cap))}</strong>
+          </div>
+          <div>
+            <span className="eyebrow">APR</span>
+            <strong>{fmtPct(result.interestRateBps)}</strong>
+          </div>
+          <div>
+            <span className="eyebrow">Tx</span>
+            <strong>{fmtAddress(result.txHash)}</strong>
+          </div>
         </div>
       ) : null}
     </article>
   );
 }
 
-type FooterSectionProps = {
+type OperatorPanelProps = {
+  pool: PoolState | null;
+  backendBase: string;
+  form: UnderwritePayload;
+  result: UnderwriteResult | null;
   busy: string | null;
-  status: string;
+  walletConnected: boolean;
+  onChange: (key: keyof UnderwritePayload, value: string) => void;
+  onSubmit: () => void;
   onMarkDefaulted: () => void;
   onRefresh: () => void;
 };
 
-export function FooterSection({
+export function OperatorPanel({
+  pool,
+  backendBase,
+  form,
+  result,
   busy,
-  status,
+  walletConnected,
+  onChange,
+  onSubmit,
   onMarkDefaulted,
   onRefresh,
-}: FooterSectionProps) {
+}: OperatorPanelProps) {
   return (
-    <section className="grid gap-[18px] sm:grid-cols-2">
-      <article className="panel-surface grid gap-3.5 rounded-[28px] p-[22px]">
-        <p className="mb-2.5 text-xs tracking-[0.18em] text-accent uppercase">Keeper</p>
-        <h2 className="text-[1.65rem]">Default trigger</h2>
-        <p className="leading-relaxed text-muted">
-          Anyone can call `markDefaulted()` once the debt is past due and beyond the grace
-          period.
-        </p>
-        <button className="btn-primary" onClick={onMarkDefaulted} disabled={!!busy}>
-          {busy === "Marking default" ? "Submitting..." : "Mark defaulted"}
-        </button>
+    <section className="workspace-grid workspace-grid-operator">
+      <article className="workspace-panel operator-panel">
+        <div className="workspace-heading">
+          <div>
+            <span className="eyebrow">Operations</span>
+            <strong>Pool state</strong>
+          </div>
+        </div>
+        <div className="detail-list operator-details">
+          <div>
+            <span>Pool NAV</span>
+            <strong>{pool ? fmtUsdAdaptive(pool.totalAssets) : "--"}</strong>
+          </div>
+          <div>
+            <span>Cash</span>
+            <strong>{pool ? fmtUsdAdaptive(pool.cash) : "--"}</strong>
+          </div>
+          <div>
+            <span>Accrued interest</span>
+            <strong>{pool ? fmtUsdAdaptive(pool.accruedInterest) : "--"}</strong>
+          </div>
+          <div>
+            <span>Grace period</span>
+            <strong>{pool ? `${Number(pool.defaultGracePeriod) / 3600} hrs` : "--"}</strong>
+          </div>
+          <div>
+            <span>NAV / share</span>
+            <strong>{pool ? `$${toUsdc(pool.navPerShare1e18, NAV_DECIMALS).toFixed(4)}` : "--"}</strong>
+          </div>
+          <div>
+            <span>Status</span>
+            <strong>{pool ? (pool.defaulted ? "Defaulted" : "Active") : "--"}</strong>
+          </div>
+        </div>
+        <div className="button-row operator-buttons">
+          <button className="btn-primary" onClick={onRefresh} disabled={!!busy}>
+            Refresh state
+          </button>
+          <button className="btn-secondary" onClick={onMarkDefaulted} disabled={!!busy || !walletConnected}>
+            {busy === "Marking default" ? "Submitting..." : "Mark defaulted"}
+          </button>
+        </div>
       </article>
 
-      <article className="panel-surface grid gap-3.5 rounded-[28px] p-[22px]">
-        <p className="mb-2.5 text-xs tracking-[0.18em] text-accent uppercase">Live status</p>
-        <h2 className="text-[1.65rem]">Session</h2>
-        <p className="leading-relaxed text-muted">{status}</p>
-        <button className="btn-primary" onClick={onRefresh} disabled={!!busy}>
-          Refresh state
-        </button>
-      </article>
+      <UnderwritePanel
+        backendBase={backendBase}
+        form={form}
+        result={result}
+        busy={busy}
+        onChange={onChange}
+        onSubmit={onSubmit}
+      />
     </section>
   );
 }

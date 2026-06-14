@@ -1,6 +1,13 @@
 export const stakeAndAdvanceAbi = [
   {
     type: "function",
+    name: "company",
+    stateMutability: "view",
+    inputs: [],
+    outputs: [{ name: "", type: "address" }],
+  },
+  {
+    type: "function",
     name: "deposit",
     stateMutability: "nonpayable",
     inputs: [{ name: "amount", type: "uint256" }],

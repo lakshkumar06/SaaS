@@ -77,16 +77,18 @@ contract StakeAndAdvance is IReceiver, ReentrancyGuard {
 
     constructor(
         IERC20 usdc_,
+        address company_,
         address keystoneForwarder_,
         uint64 repaymentWindow_,
         uint64 defaultGracePeriod_,
         uint16 minReserveBps_
     ) {
         if (address(usdc_) == address(0)) revert InvalidAddress();
+        if (company_ == address(0)) revert InvalidAddress();
         if (minReserveBps_ > BPS) revert InvalidReserveBps();
 
         usdc = usdc_;
-        company = msg.sender;
+        company = company_;
         keystoneForwarder = keystoneForwarder_;
         repaymentWindow = repaymentWindow_;
         defaultGracePeriod = defaultGracePeriod_;
@@ -348,6 +350,7 @@ contract StakeAndAdvance is IReceiver, ReentrancyGuard {
 
         (address reportCompany, uint256 cap, uint64 expiry, uint16 rateBps) =
             abi.decode(report, (address, uint256, uint64, uint16));
+        if (reportCompany != company) revert InvalidAddress();
         if (rateBps > MAX_INTEREST_RATE_BPS) revert InvalidInterestRateBps();
 
         _accrue();

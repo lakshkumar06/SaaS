@@ -1,6 +1,6 @@
 # Frontend Handoff
 
-Live defaults are already in `app/lib`.
+Live defaults are already in `src/lib`.
 
 | Item | Value |
 | --- | --- |
@@ -8,13 +8,23 @@ Live defaults are already in `app/lib`.
 | Chain ID | `5042002` |
 | RPC | `https://rpc.testnet.arc.network` |
 | USDC | `0x3600000000000000000000000000000000000000` |
-| Pool | `0x08B7F322a12FBee6B6E1e745302D12422465533D` |
+| Pool | `0xAe632832f9a588DeCe304B1f1cCb946B3cEd79e1` |
 
 Use:
 
-- `app/lib/arcChain.ts` for viem/wagmi chain config.
-- `app/lib/addresses.ts` for contract addresses.
-- `app/lib/abi.ts` for the pool ABI.
+- `src/lib/arcChain.ts` for viem/Dynamic chain config.
+- `src/lib/addresses.ts` for contract addresses.
+- `src/lib/abi.ts` for the pool ABI.
+
+Required frontend env:
+
+- `VITE_DYNAMIC_ENVIRONMENT_ID` enables Dynamic wallet connect and all write flows.
+- `VITE_API_BASE_URL` points the underwriting panel at the backend and defaults to `http://127.0.0.1:8788`.
+- `VITE_STAKE_AND_ADVANCE_ADDRESS` overrides the default pool contract address.
+
+If `VITE_DYNAMIC_ENVIRONMENT_ID` is unset, the app intentionally falls back to read-only mode instead of booting with a broken wallet configuration.
+
+The pool is single-company. The frontend reads `company()` from the pool and uses that address for underwriting; only that wallet can draw down or repay.
 
 ## User Flow
 

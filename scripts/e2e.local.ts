@@ -65,7 +65,7 @@ async function main(): Promise<void> {
   hash = await company.deployContract({
     abi: stakeAbi,
     bytecode: stakeArtifact.bytecode,
-    args: [usdc, ADDR.reporter, 600, 600, 0],
+    args: [usdc, ADDR.company, ADDR.reporter, 600, 600, 0],
   });
   const contract = (await publicClient.waitForTransactionReceipt({ hash })).contractAddress!;
 

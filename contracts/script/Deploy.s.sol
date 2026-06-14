@@ -20,6 +20,7 @@ contract Deploy {
 
     function run() external returns (StakeAndAdvance deployed) {
         address usdc = vm.envAddress("USDC_ADDRESS");
+        address company = vm.envAddress("COMPANY_ADDRESS");
         address keystoneForwarder = vm.envAddress("KEYSTONE_FORWARDER");
         uint64 repaymentWindow =
             uint64(vm.envOr("REPAYMENT_WINDOW_SECONDS", uint256(DEFAULT_REPAYMENT_WINDOW)));
@@ -30,7 +31,7 @@ contract Deploy {
 
         vm.startBroadcast();
         deployed = new StakeAndAdvance(
-            IERC20(usdc), keystoneForwarder, repaymentWindow, gracePeriod, minReserveBps
+            IERC20(usdc), company, keystoneForwarder, repaymentWindow, gracePeriod, minReserveBps
         );
         vm.stopBroadcast();
     }

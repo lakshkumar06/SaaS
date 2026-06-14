@@ -1,4 +1,5 @@
 export type PoolState = {
+  company: `0x${string}`;
   totalAssets: bigint;
   cash: bigint;
   outstandingPrincipal: bigint;

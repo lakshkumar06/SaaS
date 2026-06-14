@@ -8,6 +8,7 @@ if [[ -f .env ]]; then
 fi
 
 : "${USDC_ADDRESS:?USDC_ADDRESS required}"
+: "${COMPANY_ADDRESS:?COMPANY_ADDRESS required}"
 : "${KEYSTONE_FORWARDER:?KEYSTONE_FORWARDER required}"
 : "${ARC_RPC_URL:?ARC_RPC_URL required}"
 : "${PRIVATE_KEY:?PRIVATE_KEY required}"

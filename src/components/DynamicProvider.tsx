@@ -5,6 +5,7 @@ import { EthereumWalletConnectors } from "@dynamic-labs/ethereum";
 import type { EvmNetwork } from "@dynamic-labs/types";
 
 import { arcTestnet } from "../lib/arcChain";
+import { dynamicEnvironmentId } from "../lib/env";
 
 const arcDynamicNetwork: EvmNetwork = {
   blockExplorerUrls: [arcTestnet.blockExplorers.default.url],
@@ -22,15 +23,12 @@ const arcDynamicNetwork: EvmNetwork = {
   vanityName: arcTestnet.name,
 };
 
-const environmentId =
-  import.meta.env.VITE_DYNAMIC_ENVIRONMENT_ID || "missing-dynamic-environment-id";
-
 export function DynamicProvider({ children }: { children: ReactNode }) {
   return (
     <DynamicContextProvider
       settings={{
-        appName: "Stake & Advance",
-        environmentId,
+        appName: "Lattice",
+        environmentId: dynamicEnvironmentId!,
         initialAuthenticationMode: "connect-only",
         overrides: {
           evmNetworks: [arcDynamicNetwork],

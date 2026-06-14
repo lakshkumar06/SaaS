@@ -1,8 +1,8 @@
 import { createPublicClient, createWalletClient, http, parseAbi } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 
-import { arcTestnet } from "../app/lib/arcChain";
-import { STAKE_AND_ADVANCE_ADDRESS } from "../app/lib/addresses";
+import { arcTestnet } from "../src/lib/arcChain";
+import { STAKE_AND_ADVANCE_ADDRESS } from "../src/lib/addresses";
 
 const abi = parseAbi([
   "function markDefaulted()",

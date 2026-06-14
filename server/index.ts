@@ -1,5 +1,6 @@
 import { pathToFileURL } from "node:url";
 
+import { fetchPoolActivity, serializePoolActivity } from "../src/lib/poolActivity";
 import { loadArtifact } from "./artifacts";
 import { publicClientFor } from "./chain";
 import { configFromEnv, type ServerConfig } from "./config";
@@ -39,23 +40,63 @@ async function readJson(req: RequestLike): Promise<Record<string, unknown>> {
 async function readPoolState(config: ServerConfig) {
   const publicClient = publicClientFor(config.chainId, config.rpcUrl);
   const stakeAbi = (await loadArtifact("StakeAndAdvance")).abi as never;
-  const state = (await publicClient.readContract({
-    address: config.contract,
-    abi: stakeAbi,
-    functionName: "poolState",
-  })) as readonly [bigint, bigint, bigint, bigint, bigint, bigint, number, number, number, boolean];
+  const [company, state, availableToBorrow, accruedInterest, defaultGracePeriod] =
+    await Promise.all([
+      publicClient.readContract({
+        address: config.contract,
+        abi: stakeAbi,
+        functionName: "company",
+      }),
+      publicClient.readContract({
+        address: config.contract,
+        abi: stakeAbi,
+        functionName: "poolState",
+      }),
+      publicClient.readContract({
+        address: config.contract,
+        abi: stakeAbi,
+        functionName: "availableToBorrow",
+      }),
+      publicClient.readContract({
+        address: config.contract,
+        abi: stakeAbi,
+        functionName: "accruedInterest",
+      }),
+      publicClient.readContract({
+        address: config.contract,
+        abi: stakeAbi,
+        functionName: "defaultGracePeriod",
+      }),
+    ]);
+
+  const pool = state as readonly [
+    bigint,
+    bigint,
+    bigint,
+    bigint,
+    bigint,
+    bigint,
+    number,
+    number,
+    number,
+    boolean,
+  ];
 
   return {
-    totalAssets: state[0].toString(),
-    cash: state[1].toString(),
-    outstandingPrincipal: state[2].toString(),
-    totalShares: state[3].toString(),
-    navPerShare1e18: state[4].toString(),
-    creditCap: state[5].toString(),
-    capExpiry: state[6].toString(),
-    interestRateBps: Number(state[7]),
-    dueAt: state[8].toString(),
-    defaulted: state[9],
+    company,
+    totalAssets: pool[0].toString(),
+    cash: pool[1].toString(),
+    outstandingPrincipal: pool[2].toString(),
+    totalShares: pool[3].toString(),
+    navPerShare1e18: pool[4].toString(),
+    creditCap: pool[5].toString(),
+    capExpiry: pool[6].toString(),
+    interestRateBps: Number(pool[7]),
+    dueAt: pool[8].toString(),
+    defaulted: pool[9],
+    availableToBorrow: availableToBorrow.toString(),
+    accruedInterest: accruedInterest.toString(),
+    defaultGracePeriod: defaultGracePeriod.toString(),
   };
 }
 
@@ -81,6 +122,14 @@ export function buildHandler(config: ServerConfig) {
 
       if (req.method === "GET" && url === "/pool/state") {
         return send(res, 200, await readPoolState(config));
+      }
+
+      if (req.method === "GET" && url === "/pool/activity") {
+        const publicClient = publicClientFor(config.chainId, config.rpcUrl);
+        const activities = await fetchPoolActivity(publicClient, config.contract);
+        return send(res, 200, {
+          activities: activities.map(serializePoolActivity),
+        });
       }
 
       if (req.method === "POST" && url === "/cre/underwrite") {

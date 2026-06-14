@@ -3,7 +3,11 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build": "forge build --root contracts",
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "contracts:build": "forge build --root contracts",
+    "contracts:test": "forge test --root contracts",
     "test": "forge test --root contracts",
     "test:v": "forge test --root contracts -vvv",
     "e2e:local": "bash scripts/e2e.local.sh",
@@ -17,12 +21,21 @@
   },
   "dependencies": {
     "@chainlink/cre-sdk": "^1.6.0",
-    "next": "^15.0.0",
-    "typescript": "^5.6.0",
+    "@dynamic-labs/ethereum": "^4.88.6",
+    "@dynamic-labs/sdk-react-core": "^4.88.6",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
     "viem": "^2.21.0"
   },
   "devDependencies": {
+    "@tailwindcss/vite": "^4.1.8",
     "@types/node": "^22.10.0",
-    "tsx": "^4.19.0"
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "@vitejs/plugin-react": "^4.5.2",
+    "tailwindcss": "^4.1.8",
+    "tsx": "^4.19.0",
+    "typescript": "^5.6.0",
+    "vite": "^6.3.5"
   }
 }

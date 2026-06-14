@@ -1,0 +1,69 @@
+@import "tailwindcss";
+
+@theme {
+  --color-bg: #f5efe1;
+  --color-panel: rgba(255, 250, 241, 0.82);
+  --color-panel-strong: rgba(255, 248, 232, 0.96);
+  --color-line: rgba(33, 39, 30, 0.12);
+  --color-text: #21271e;
+  --color-muted: #5f675f;
+  --color-accent: #0c6c56;
+  --color-accent-strong: #094f40;
+  --font-serif: Georgia, "Iowan Old Style", "Palatino Linotype", serif;
+  --shadow-panel: 0 30px 80px rgba(60, 49, 24, 0.14);
+}
+
+@layer base {
+  html {
+    background:
+      radial-gradient(circle at top left, rgba(199, 222, 180, 0.72), transparent 30%),
+      radial-gradient(circle at top right, rgba(255, 206, 146, 0.6), transparent 28%),
+      linear-gradient(180deg, #f9f4e7 0%, #f0e7d3 100%);
+  }
+
+  body {
+    @apply m-0 min-h-screen text-text font-serif;
+    background:
+      linear-gradient(135deg, rgba(255, 255, 255, 0.35), transparent 55%),
+      repeating-linear-gradient(
+        135deg,
+        rgba(33, 39, 30, 0.03) 0,
+        rgba(33, 39, 30, 0.03) 1px,
+        transparent 1px,
+        transparent 14px
+      );
+  }
+
+  button,
+  input {
+    font: inherit;
+  }
+
+  button {
+    @apply cursor-pointer;
+  }
+}
+
+@layer components {
+  .panel-surface {
+    @apply border border-line bg-panel backdrop-blur-[18px];
+    box-shadow: var(--shadow-panel);
+  }
+
+  .btn-primary {
+    @apply w-full rounded-full border-0 px-[18px] py-[13px] text-[#fff8ef] transition duration-150 ease-in-out;
+    background: linear-gradient(135deg, var(--color-accent) 0%, var(--color-accent-strong) 100%);
+  }
+
+  .btn-primary:hover:not(:disabled) {
+    @apply -translate-y-px;
+  }
+
+  .btn-primary:disabled {
+    @apply cursor-wait opacity-60;
+  }
+
+  .field-input {
+    @apply w-full rounded-2xl border border-[rgba(33,39,30,0.14)] bg-panel-strong px-3.5 py-[13px] text-text;
+  }
+}

@@ -8,7 +8,7 @@ Live defaults are already in `app/lib`.
 | Chain ID | `5042002` |
 | RPC | `https://rpc.testnet.arc.network` |
 | USDC | `0x3600000000000000000000000000000000000000` |
-| Pool | `0xC18036FfFfa6D5A861EbA9bd1084b68BC3321c40` |
+| Pool | `0x08B7F322a12FBee6B6E1e745302D12422465533D` |
 
 Use:
 

@@ -4,7 +4,7 @@ export const ARC_TESTNET_USDC = "0x3600000000000000000000000000000000000000" as 
 
 // Defaults to the live Arc testnet deployment for frontend demos.
 export const STAKE_AND_ADVANCE_ADDRESS =
-  (process.env.STAKE_AND_ADVANCE_ADDRESS || "0xC18036FfFfa6D5A861EbA9bd1084b68BC3321c40") as `0x${string}`;
+  (process.env.STAKE_AND_ADVANCE_ADDRESS || "0x08B7F322a12FBee6B6E1e745302D12422465533D") as `0x${string}`;
 
 export const KEYSTONE_FORWARDER =
   (process.env.KEYSTONE_FORWARDER || "0x0000000000000000000000000000000000000000") as `0x${string}`;

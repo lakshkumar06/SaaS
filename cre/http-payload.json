@@ -11,8 +11,8 @@
     "repaymentCount": 4,
     "onTimeRepaymentCount": 3,
     "lateRepaymentCount": 1,
-    "onTimeRepaymentBps": 7500,
-    "totalRepaidUsdc": 1000000,
+    "totalInterestPaidUsdc": 1000000,
+    "defaultedAmountUsdc": 0,
     "currentOutstandingDebtUsdc": 0,
     "currentDebtDueAt": 0
   }

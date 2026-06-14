@@ -20,7 +20,7 @@ and the lenders are the company's own customers rather than institutional LPs.
 | RPC | `https://rpc.testnet.arc.network` |
 | Explorer | `https://testnet.arcscan.app` |
 | USDC | `0x3600000000000000000000000000000000000000` |
-| Pool contract | `0xC18036FfFfa6D5A861EbA9bd1084b68BC3321c40` |
+| Pool contract | `0x08B7F322a12FBee6B6E1e745302D12422465533D` |
 
 Frontend wiring lives in [FRONTEND.md](/Users/lakshkumar/Desktop/SaaS/FRONTEND.md).
 
